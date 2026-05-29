@@ -38,11 +38,11 @@
     .date-circle {
       border-radius: 50%;
       border: 2.5px solid #ef4444;
-      color: #dc2626;
+      /* 文字色は曜日ルールで付与 */
     }
     .date-square {
       border: 2.5px solid #2563eb;
-      color: #1d4ed8;
+      /* 文字色は曜日ルールで付与 */
     }
     /* 今日: グリーン二重丸（border＋outline） */
     .date-today {
@@ -50,7 +50,7 @@
       border: 2.5px solid #16a34a;
       outline: 2.5px solid #16a34a;
       outline-offset: 3px;
-      color: #15803d;
+      /* 文字色は曜日ルールで付与 */
     }
     /* 今日 ＋ 赤丸/青四角: 既存の枠にグリーンoutlineを追加 */
     .today-outline {
@@ -69,10 +69,39 @@
   </style>
 </head>
 <body class="bg-gray-100 min-h-screen">
+
+<!-- ログイン画面 -->
+<div id="login-overlay" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-[100]">
+  <div class="bg-white rounded-2xl shadow-2xl p-8 w-80 max-w-full mx-4">
+    <div class="text-center mb-6">
+      <div class="text-4xl mb-2">🔐</div>
+      <h2 class="text-xl font-bold text-gray-800">管理画面ログイン</h2>
+      <p class="text-xs text-gray-400 mt-1">当別町 ごみ収集カレンダー</p>
+    </div>
+    <div class="space-y-3">
+      <input id="login-password" type="password" placeholder="パスワード"
+             autocomplete="current-password"
+             class="w-full border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+             onkeydown="if(event.key==='Enter')login()">
+      <p id="login-error" class="text-red-500 text-xs text-center hidden">パスワードが違います</p>
+      <button onclick="login()"
+              class="w-full bg-blue-500 hover:bg-blue-600 text-white py-2.5 rounded-lg text-sm font-medium transition-colors">
+        ログイン
+      </button>
+    </div>
+  </div>
+</div>
+
 <div class="max-w-3xl mx-auto p-3">
 
   <!-- タイトル -->
-  <h1 class="text-lg font-bold text-center text-gray-800 mb-3">当別町 ごみ収集カレンダー管理</h1>
+  <div class="flex items-center justify-between mb-3">
+    <h1 class="text-lg font-bold text-gray-800">当別町 ごみ収集カレンダー管理</h1>
+    <button onclick="logout()" title="ログアウト"
+            class="text-xs text-gray-400 hover:text-gray-600 px-2 py-1 rounded-lg hover:bg-gray-200 transition-colors">
+      🔓 ログアウト
+    </button>
+  </div>
 
   <!-- 地区タブ -->
   <div class="flex gap-2 mb-2">
@@ -113,7 +142,11 @@
 
   <!-- ===== 年間プレビュー ===== -->
   <div id="year-view" class="hidden">
-    <div id="year-title" class="text-center text-sm font-semibold text-gray-600 mb-2"></div>
+    <div class="flex items-center justify-between bg-white rounded-xl px-4 py-2 mb-2 shadow-sm">
+      <button onclick="prevFiscalYear()" class="text-2xl text-gray-400 hover:text-gray-700 w-8">‹</button>
+      <span id="year-title" class="text-sm font-semibold text-gray-600"></span>
+      <button onclick="nextFiscalYear()" class="text-2xl text-gray-400 hover:text-gray-700 w-8 text-right">›</button>
+    </div>
     <div id="year-grid" class="grid grid-cols-3 gap-2"></div>
   </div>
 
@@ -184,11 +217,63 @@ const WEEKDAY_JP = ['日','月','火','水','木','金','土'];
 
 let district = 3, year = new Date().getFullYear(), month = new Date().getMonth() + 1;
 let scheduleData = {}, editingDate = null, view = 'month';
+let fyOffset = 0; // 年間プレビューの年度オフセット（0=今年度, 1=翌年度, -1=前年度）
 
 const _t = new Date();
 const todayKey = `${_t.getFullYear()}-${String(_t.getMonth()+1).padStart(2,'0')}-${String(_t.getDate()).padStart(2,'0')}`;
 
-setDistrict(3);
+// ------------------------------------------------------------------ //
+//  認証                                                               //
+// ------------------------------------------------------------------ //
+const TOKEN_KEY  = 'tobetsu_admin_token';
+const getToken   = () => localStorage.getItem(TOKEN_KEY);
+const setToken   = (t) => localStorage.setItem(TOKEN_KEY, t);
+const clearToken = () => localStorage.removeItem(TOKEN_KEY);
+
+function authFetch(url, options = {}) {
+  const token = getToken();
+  if (token) options.headers = { ...options.headers, 'Authorization': `Bearer ${token}` };
+  return fetch(url, options);
+}
+
+async function checkAuth() {
+  const token = getToken();
+  const res = await fetch('/admin/check', {
+    headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+  });
+  const { valid, auth_required } = await res.json();
+  if (!auth_required || valid) {
+    document.getElementById('login-overlay').classList.add('hidden');
+    setDistrict(3);
+  }
+  // 未認証の場合はオーバーレイをそのまま表示
+}
+
+async function login() {
+  const password = document.getElementById('login-password').value;
+  const res = await fetch('/admin/login', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password }),
+  });
+  if (res.ok) {
+    const { token } = await res.json();
+    setToken(token);
+    document.getElementById('login-error').classList.add('hidden');
+    document.getElementById('login-overlay').classList.add('hidden');
+    setDistrict(3);
+  } else {
+    document.getElementById('login-error').classList.remove('hidden');
+    document.getElementById('login-password').select();
+  }
+}
+
+function logout() {
+  clearToken();
+  document.getElementById('login-overlay').classList.remove('hidden');
+  document.getElementById('login-password').value = '';
+}
+
+checkAuth();
 
 // ------------------------------------------------------------------ //
 //  ビュー切替                                                          //
@@ -201,16 +286,26 @@ function setView(v) {
   const def = 'flex-1 py-1.5 rounded-lg text-sm font-medium bg-white text-gray-600 hover:bg-gray-100';
   document.getElementById('btn-month').className = v === 'month' ? act : def;
   document.getElementById('btn-year').className  = v === 'year'  ? act : def;
-  if (v === 'year') loadYearView();
+  if (v === 'year') {
+    // 月表示の年月から年度オフセットを同期
+    const currentFY = month >= 4 ? year : year - 1;
+    fyOffset = currentFY - baseFiscalYear();
+    loadYearView();
+  }
 }
 
 // ------------------------------------------------------------------ //
 //  年間プレビュー                                                      //
 // ------------------------------------------------------------------ //
-function fiscalStart() {
-  // 4月始まりの年度開始年
-  return month >= 4 ? year : year - 1;
+function baseFiscalYear() {
+  const now = new Date();
+  return now.getMonth() + 1 >= 4 ? now.getFullYear() : now.getFullYear() - 1;
 }
+function fiscalStart() {
+  return baseFiscalYear() + fyOffset;
+}
+function prevFiscalYear() { fyOffset--; loadYearView(); }
+function nextFiscalYear() { fyOffset++; loadYearView(); }
 
 function fiscalMonths() {
   const fy = fiscalStart();
@@ -230,7 +325,7 @@ async function loadYearView() {
   const months = fiscalMonths();
   const results = await Promise.all(
     months.map(({ year: y, month: m }) =>
-      fetch(`/api/schedule?district=${district}&year=${y}&month=${m}`)
+      authFetch(`/api/schedule?district=${district}&year=${y}&month=${m}`)
         .then(r => r.json()).then(data => ({ year: y, month: m, data }))
     )
   );
@@ -314,16 +409,18 @@ function buildMiniCell(day, info, dow, isToday) {
   const span = document.createElement('span');
   const SZ = 'width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;';
 
+  // 文字色は曜日で固定（日=赤, 土=青, 平日=黒）
+  let color = '#374151';
+  if (dow === 0 || info.is_holiday) color = '#dc2626';
+  else if (dow === 6)               color = '#2563eb';
+
   if (isToday) {
-    span.style.cssText = SZ + 'border-radius:50%;border:1.5px solid #16a34a;outline:1.5px solid #16a34a;outline-offset:1px;color:#15803d;';
+    span.style.cssText = SZ + `border-radius:50%;border:1.5px solid #16a34a;outline:1.5px solid #16a34a;outline-offset:1px;color:${color};`;
   } else if (hasMoeru) {
-    span.style.cssText = SZ + 'border-radius:50%;border:1.5px solid #ef4444;color:#dc2626;';
+    span.style.cssText = SZ + `border-radius:50%;border:1.5px solid #ef4444;color:${color};`;
   } else if (hasShigen) {
-    span.style.cssText = SZ + 'border:1.5px solid #2563eb;color:#1d4ed8;';
+    span.style.cssText = SZ + `border:1.5px solid #2563eb;color:${color};`;
   } else {
-    let color = '#374151';
-    if (dow === 0 || info.is_holiday) color = '#dc2626';
-    else if (dow === 6)               color = '#2563eb';
     span.style.cssText = SZ + `color:${color};`;
   }
   span.textContent = day;
@@ -346,7 +443,7 @@ function setDistrict(d) {
 }
 
 async function loadSchedule() {
-  const res = await fetch(`/api/schedule?district=${district}&year=${year}&month=${month}`);
+  const res = await authFetch(`/api/schedule?district=${district}&year=${year}&month=${month}`);
   scheduleData = await res.json();
   renderCalendar();
 }
@@ -402,15 +499,15 @@ function renderCalendar() {
     // 今日はグリーン二重丸を優先し、赤丸/青四角と重なる場合はoutlineで追加
     let dateHtml;
     if (isToday && hasMoeru) {
-      dateHtml = `<span class="date-circle today-outline">${d}</span>`;
+      dateHtml = `<span class="date-circle today-outline ${numColorClass}">${d}</span>`;
     } else if (isToday && hasShigen) {
-      dateHtml = `<span class="date-square today-outline">${d}</span>`;
+      dateHtml = `<span class="date-square today-outline ${numColorClass}">${d}</span>`;
     } else if (isToday) {
-      dateHtml = `<span class="date-today">${d}</span>`;
+      dateHtml = `<span class="date-today ${numColorClass}">${d}</span>`;
     } else if (hasMoeru) {
-      dateHtml = `<span class="date-circle">${d}</span>`;
+      dateHtml = `<span class="date-circle ${numColorClass}">${d}</span>`;
     } else if (hasShigen) {
-      dateHtml = `<span class="date-square">${d}</span>`;
+      dateHtml = `<span class="date-square ${numColorClass}">${d}</span>`;
     } else {
       dateHtml = `<span class="date-plain ${numColorClass}">${d}</span>`;
     }
@@ -476,7 +573,7 @@ async function setNoCollection() { await post(editingDate, []); closeModal(); }
 async function revertToRule()    { await post(editingDate, null); closeModal(); }
 
 async function post(dateKey, types) {
-  await fetch('/api/correction', {
+  await authFetch('/api/correction', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ district, date: dateKey, types }),
   });

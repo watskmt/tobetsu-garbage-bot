@@ -1,12 +1,18 @@
+from __future__ import annotations
+
 import calendar as cal_module
+import hashlib
+import hmac
 import json
 import os
+import secrets
 from datetime import date
 from pathlib import Path
+from typing import Optional
 
 import jpholiday
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
@@ -35,6 +41,44 @@ config = Configuration(access_token=LINE_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 calendar = GarbageCalendar()
 
+# ------------------------------------------------------------------ #
+#  管理画面認証                                                        #
+# ------------------------------------------------------------------ #
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
+_ADMIN_SECRET  = os.environ.get("ADMIN_SECRET_KEY") or secrets.token_hex(32)
+
+
+def _admin_token() -> str:
+    """サーバー秘密鍵から管理者トークンを生成（決定論的HMAC）"""
+    return hmac.new(_ADMIN_SECRET.encode(), b"admin-session", hashlib.sha256).hexdigest()
+
+
+def require_admin(authorization: Optional[str] = Header(None)):
+    """管理API用認証依存関係"""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="認証が必要です")
+    if not hmac.compare_digest(authorization[7:], _admin_token()):
+        raise HTTPException(status_code=401, detail="トークンが無効です")
+
+
+@app.get("/admin/check")
+def admin_check(authorization: Optional[str] = Header(None)):
+    """トークン検証"""
+    if not authorization or not authorization.startswith("Bearer "):
+        return {"valid": False, "auth_required": True}
+    return {"valid": hmac.compare_digest(authorization[7:], _admin_token()), "auth_required": True}
+
+
+@app.post("/admin/login")
+async def admin_login(request: Request):
+    """パスワード検証 → トークン発行"""
+    body = await request.json()
+    password = body.get("password", "")
+    if not hmac.compare_digest(password, ADMIN_PASSWORD):
+        raise HTTPException(status_code=401, detail="パスワードが違います")
+    return {"token": _admin_token()}
+
+
 MAIN_QUICK_REPLY = QuickReply(items=[
     QuickReplyItem(action=MessageAction(label="今日", text="今日")),
     QuickReplyItem(action=MessageAction(label="明日", text="明日")),
@@ -51,10 +95,10 @@ DISTRICT_QUICK_REPLY = QuickReply(items=[
 
 DISTRICT_GUIDE = (
     "地区を選択してください。\n\n"
-    "1地区: 弥生・園生・青山・弁華別など\n"
+    "1地区: 弥生・園生(旭町・万代町)・青山・弁華別・茂平沢・みどり野\n"
     "2地区: 金沢・中小屋・東裏・蕨岱町\n"
-    "3地区: 白樺町・下川町・末広・スウェーデンヒルズなど\n"
-    "4地区: 春日町・樺岱町・太美・高岡など"
+    "3地区: 白白樺町・下川町・末広・西町・錦町・北栄町・美里・六軒町・若葉・上当別・スウェーデンヒルズ\n"
+    "4地区: 春日町・樺戸町・幸町・栄町・対雁・東町・緑町・元町・太美(東・西・南・北・中央・寿・スターライト)・高岡・獅子内・ビトエ・当別太・川下(右岸・左岸)"
 )
 
 
@@ -149,7 +193,11 @@ def admin_page():
 
 
 @app.get("/api/schedule")
-def api_schedule(district: int, year: int, month: int):
+def api_schedule(district: int, year: int, month: int, _=Depends(require_admin)):
+    # リクエストされた年度が未生成なら自動補完
+    fy = year if month >= 4 else year - 1
+    calendar.ensure_fiscal_year(district, fy)
+
     _, days_in_month = cal_module.monthrange(year, month)
     corrections = _load_corrections_raw()
     district_corrections = corrections.get(str(district), {})
@@ -169,7 +217,7 @@ def api_schedule(district: int, year: int, month: int):
 
 
 @app.post("/api/correction")
-async def api_correction(request: Request):
+async def api_correction(request: Request, _=Depends(require_admin)):
     body = await request.json()
     district_key = str(body["district"])
     date_key = body["date"]

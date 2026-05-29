@@ -4,6 +4,8 @@
 PDF → 画像変換 → Claude Vision API でカレンダーを解析する。
 結果はローカルにキャッシュするため、APIコールは初回起動時のみ。
 """
+from __future__ import annotations
+
 import base64
 import io
 import json
@@ -104,7 +106,16 @@ class GarbageCalendar:
                 self._schedules[district] = {}
 
     def _generate_from_rules(self, district: int) -> dict[str, list[str]]:
-        """rules.json のルールからスケジュールを生成する"""
+        """rules.json のルールからスケジュールを生成する（起動時: 現年度＋翌年度）"""
+        today = date.today()
+        fiscal_start_year = today.year if today.month >= 4 else today.year - 1
+        result: dict[str, list[str]] = {}
+        for fy in [fiscal_start_year, fiscal_start_year + 1]:
+            result.update(self._generate_single_fiscal_year(district, fy))
+        return result
+
+    def _generate_single_fiscal_year(self, district: int, fiscal_year: int) -> dict[str, list[str]]:
+        """指定年度（4月〜翌3月）の1年分を生成する"""
         rules_path = Path("rules.json")
         if not rules_path.exists():
             return {}
@@ -117,21 +128,16 @@ class GarbageCalendar:
         if not district_rules:
             return {}
 
-        # 現年度（4月始まり）の1年分を生成
-        today = date.today()
-        fiscal_start_year = today.year if today.month >= 4 else today.year - 1
-        start = date(fiscal_start_year, 4, 1)
-        end   = date(fiscal_start_year + 1, 3, 31)
+        start = date(fiscal_year, 4, 1)
+        end   = date(fiscal_year + 1, 3, 31)
 
         schedule: dict[str, list[str]] = {}
         current = start
         while current <= end:
             types: list[str] = []
             for rule in district_rules:
-                # 曜日チェック（0=月…6=日）
                 if current.weekday() not in rule["weekday"]:
                     continue
-                # 第N週チェック（nth 省略で毎週）
                 if "nth" in rule:
                     nth = (current.day - 1) // 7 + 1
                     if nth not in rule["nth"]:
@@ -144,6 +150,29 @@ class GarbageCalendar:
             current += timedelta(days=1)
 
         return schedule
+
+    def ensure_fiscal_year(self, district: int, fiscal_year: int):
+        """指定年度が未生成なら追加生成して_schedulesに追記する"""
+        check_key = date(fiscal_year, 4, 1).strftime("%Y-%m-%d")
+        if check_key in self._schedules.get(district, {}):
+            return  # 生成済み
+
+        new_data = self._generate_single_fiscal_year(district, fiscal_year)
+        if not new_data:
+            return
+
+        # corrections.json の上書きを適用
+        corrections = self._load_corrections()
+        overrides = corrections.get(str(district), {})
+        for date_key, types in overrides.items():
+            if date_key in new_data:
+                if types:
+                    new_data[date_key] = types
+                else:
+                    new_data.pop(date_key, None)
+
+        self._schedules.setdefault(district, {}).update(new_data)
+        print(f"地区{district}: {fiscal_year}年度を追加生成（{len(new_data)}日分）")
 
     def _load_corrections(self) -> dict:
         path = Path("corrections.json")
