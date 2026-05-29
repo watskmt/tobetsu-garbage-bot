@@ -7,3 +7,4 @@ anthropic>=0.25.0
 requests>=2.31.0
 python-dotenv>=1.0.0
 jpholiday>=0.1.8
+APScheduler>=3.10.0
