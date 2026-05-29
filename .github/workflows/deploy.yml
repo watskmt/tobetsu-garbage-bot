@@ -1,0 +1,51 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:  # 手動実行ボタン
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+            cd /home/ec2-user/tobetsu-garbage-bot
+
+            # コードファイルのみ更新
+            # corrections.json・users.json はサーバー側の状態を保持する
+            git fetch origin master
+            git checkout origin/master -- \
+              app.py \
+              calendar_parser.py \
+              user_store.py \
+              rules.json \
+              requirements.txt \
+              static/admin.html \
+              DEVELOPER.md \
+              USER.md
+
+            # 依存パッケージ更新（変更があった場合のみ実際にインストールされる）
+            source venv/bin/activate
+            pip install -r requirements.txt -q
+
+            # サービス再起動
+            sudo systemctl restart tobetsu-bot
+
+            # 起動確認（3秒待って状態チェック）
+            sleep 3
+            sudo systemctl is-active --quiet tobetsu-bot \
+              && echo "✅ デプロイ成功: $(date '+%Y-%m-%d %H:%M:%S JST')" \
+              || (echo "❌ サービス起動失敗" \
+                  && sudo journalctl -u tobetsu-bot -n 30 --no-pager \
+                  && exit 1)
