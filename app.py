@@ -4,13 +4,16 @@ import calendar as cal_module
 import hashlib
 import hmac
 import json
+import logging
 import os
+import re
 import secrets
-from datetime import date
+from datetime import date, datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
 
 import jpholiday
+from apscheduler.schedulers.background import BackgroundScheduler
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse
@@ -21,6 +24,7 @@ from linebot.v3.messaging import (
     Configuration,
     MessagingApi,
     MessageAction,
+    PushMessageRequest,
     QuickReply,
     QuickReplyItem,
     ReplyMessageRequest,
@@ -31,6 +35,10 @@ from linebot.v3.webhooks import FollowEvent, MessageEvent, TextMessageContent
 import user_store
 from calendar_parser import GarbageCalendar, DISTRICT_NAMES
 
+logger = logging.getLogger(__name__)
+
+JST = timezone(timedelta(hours=9))
+
 load_dotenv()
 
 LINE_ACCESS_TOKEN = os.environ["LINE_CHANNEL_ACCESS_TOKEN"]
@@ -40,6 +48,36 @@ app = FastAPI()
 config = Configuration(access_token=LINE_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 calendar = GarbageCalendar()
+
+# ------------------------------------------------------------------ #
+#  Push通知スケジューラ                                                #
+# ------------------------------------------------------------------ #
+
+def _push_text(user_id: str, text: str):
+    with ApiClient(config) as api_client:
+        api = MessagingApi(api_client)
+        api.push_message(PushMessageRequest(
+            to=user_id,
+            messages=[TextMessage(text=text)],
+        ))
+
+
+def _send_daily_notifications():
+    """毎分呼ばれ、現在時刻(JST)に通知設定のあるユーザーへPush送信する。"""
+    now = datetime.now(JST)
+    hhmm = now.strftime("%H:%M")
+    targets = user_store.get_users_to_notify(hhmm)
+    for t in targets:
+        try:
+            msg = calendar.get_today(t["district"])
+            _push_text(t["user_id"], f"【本日のごみ収集】\n{msg}")
+        except Exception as e:
+            logger.error("push failed user=%s: %s", t["user_id"], e)
+
+
+_scheduler = BackgroundScheduler(timezone="Asia/Tokyo")
+_scheduler.add_job(_send_daily_notifications, "cron", minute="*")
+_scheduler.start()
 
 # ------------------------------------------------------------------ #
 #  管理画面認証                                                        #
@@ -101,6 +139,29 @@ DISTRICT_GUIDE = (
     "4地区: 春日町・樺戸町・幸町・栄町・対雁・東町・緑町・元町・太美(東・西・南・北・中央・寿・スターライト)・高岡・獅子内・ビトエ・当別太・川下(右岸・左岸)"
 )
 
+NOTIFY_QUICK_REPLY = QuickReply(items=[
+    QuickReplyItem(action=MessageAction(label="6時", text="通知6時")),
+    QuickReplyItem(action=MessageAction(label="7時", text="通知7時")),
+    QuickReplyItem(action=MessageAction(label="8時", text="通知8時")),
+    QuickReplyItem(action=MessageAction(label="通知オフ", text="通知オフ")),
+])
+
+# "通知7時" "7時通知" "毎朝7時" 等を HH:00 に変換（正時のみ受付）
+_TIME_PATTERN = re.compile(
+    r"(?:通知|毎朝|毎日)?([０-９0-9]{1,2})時(?:通知|に通知)?"
+)
+
+def _parse_notify_time(text: str) -> str | None:
+    """テキストから正時を解析して "HH:00" 形式で返す。解析失敗時は None。"""
+    t = text.translate(str.maketrans("０１２３４５６７８９", "0123456789"))
+    m = _TIME_PATTERN.search(t)
+    if not m:
+        return None
+    hour = int(m.group(1))
+    if not (0 <= hour <= 23):
+        return None
+    return f"{hour:02d}:00"
+
 
 @app.post("/webhook")
 async def webhook(request: Request):
@@ -153,6 +214,36 @@ def handle_message(event):
         reply(event, DISTRICT_GUIDE, quick_reply=DISTRICT_QUICK_REPLY)
         return
 
+    # 通知設定
+    if text in ("通知設定", "通知", "通知する", "毎日通知"):
+        current = user_store.get_notify_time(user_id)
+        status = f"現在の設定: {current}" if current else "現在: 通知オフ"
+        reply(
+            event,
+            f"毎朝の通知時刻を選択してください。\n{status}",
+            quick_reply=NOTIFY_QUICK_REPLY,
+        )
+        return
+
+    if text in ("通知オフ", "通知OFF", "通知なし", "通知停止", "通知解除"):
+        user_store.set_notify_time(user_id, None)
+        reply(event, "毎日の通知をオフにしました。")
+        return
+
+    if text in ("通知確認",):
+        current = user_store.get_notify_time(user_id)
+        if current:
+            reply(event, f"毎日 {current} に通知します。\n変更は「通知設定」、停止は「通知オフ」と送ってください。")
+        else:
+            reply(event, "現在、通知は設定されていません。\n「通知設定」と送ると設定できます。")
+        return
+
+    notify_time = _parse_notify_time(text)
+    if notify_time:
+        user_store.set_notify_time(user_id, notify_time)
+        reply(event, f"毎日 {notify_time} にごみ収集情報を通知します。\n停止するには「通知オフ」と送ってください。")
+        return
+
     district = user_store.get_district(user_id)
     if district is None:
         reply(event, "まず地区を設定してください。\n" + DISTRICT_GUIDE, quick_reply=DISTRICT_QUICK_REPLY)
@@ -173,7 +264,7 @@ def handle_message(event):
     else:
         reply(
             event,
-            "「今日」「明日」「今週」でごみ収集日を確認できます。\n地区変更は「地区変更」と送ってください。",
+            "「今日」「明日」「今週」でごみ収集日を確認できます。\n地区変更は「地区変更」、通知設定は「通知設定」と送ってください。",
         )
 
 
