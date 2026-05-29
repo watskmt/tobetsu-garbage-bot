@@ -10,8 +10,15 @@ import base64
 import io
 import json
 import os
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+
+_JST = timezone(timedelta(hours=9))
+
+
+def _today() -> date:
+    """サーバーのシステムタイムゾーンに依存せず JST の今日を返す"""
+    return datetime.now(_JST).date()
 
 import anthropic
 import requests
@@ -267,13 +274,13 @@ class GarbageCalendar:
     # ------------------------------------------------------------------ #
 
     def get_today(self, district: int) -> str:
-        return self._format_day(district, date.today())
+        return self._format_day(district, _today())
 
     def get_tomorrow(self, district: int) -> str:
-        return self._format_day(district, date.today() + timedelta(days=1))
+        return self._format_day(district, _today() + timedelta(days=1))
 
     def get_week(self, district: int) -> str:
-        today = date.today()
+        today = _today()
         lines = []
         for i in range(7):
             d = today + timedelta(days=i)
@@ -285,7 +292,7 @@ class GarbageCalendar:
         return "\n".join(lines)
 
     def get_month(self, district: int) -> str:
-        today = date.today()
+        today = _today()
         lines = []
         for i in range(30):
             d = today + timedelta(days=i)
