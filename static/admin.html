@@ -113,8 +113,9 @@
 
   <!-- ビュー切替 -->
   <div class="flex gap-2 mb-2">
-    <button id="btn-month" onclick="setView('month')" class="flex-1 py-1.5 rounded-lg text-sm font-medium">📅 月表示</button>
-    <button id="btn-year"  onclick="setView('year')"  class="flex-1 py-1.5 rounded-lg text-sm font-medium">🗓 年間プレビュー</button>
+    <button id="btn-month"     onclick="setView('month')"     class="flex-1 py-1.5 rounded-lg text-sm font-medium">📅 月表示</button>
+    <button id="btn-year"      onclick="setView('year')"      class="flex-1 py-1.5 rounded-lg text-sm font-medium">🗓 年間</button>
+    <button id="btn-broadcast" onclick="setView('broadcast')" class="flex-1 py-1.5 rounded-lg text-sm font-medium">📢 広告</button>
   </div>
 
   <!-- ===== 月表示 ===== -->
@@ -148,6 +149,121 @@
       <button onclick="nextFiscalYear()" class="text-2xl text-gray-400 hover:text-gray-700 w-8 text-right">›</button>
     </div>
     <div id="year-grid" class="grid grid-cols-3 gap-2"></div>
+  </div>
+
+  <!-- ===== 広告ブロードキャスト管理 ===== -->
+  <div id="broadcast-view" class="hidden space-y-3">
+
+    <!-- 新規作成フォーム -->
+    <div class="bg-white rounded-xl shadow-sm overflow-hidden">
+      <button onclick="toggleNewForm()"
+              class="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-gray-800 hover:bg-gray-50">
+        <span>＋ 新規広告スケジュール</span>
+        <span id="form-toggle-icon" class="text-gray-400">▼</span>
+      </button>
+      <div id="new-broadcast-form" class="hidden px-4 pb-4 border-t border-gray-100 space-y-3 pt-3">
+
+        <div>
+          <label class="text-xs font-medium text-gray-600">名前</label>
+          <input id="bc-name" type="text" placeholder="例: 月初キャンペーン"
+                 class="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+        </div>
+
+        <div>
+          <label class="text-xs font-medium text-gray-600">種類</label>
+          <div class="mt-1 flex gap-3">
+            <label class="flex items-center gap-1.5 cursor-pointer">
+              <input type="radio" name="bc-type" value="text" checked onchange="updateBcFields()" class="accent-blue-500">
+              <span class="text-sm text-gray-700">テキスト</span>
+            </label>
+            <label class="flex items-center gap-1.5 cursor-pointer">
+              <input type="radio" name="bc-type" value="image" onchange="updateBcFields()" class="accent-blue-500">
+              <span class="text-sm text-gray-700">画像バナー</span>
+            </label>
+          </div>
+        </div>
+
+        <div id="bc-text-field">
+          <label class="text-xs font-medium text-gray-600">テキスト内容</label>
+          <textarea id="bc-text" rows="3" placeholder="送信するメッセージ内容"
+                    class="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"></textarea>
+        </div>
+
+        <div id="bc-image-fields" class="hidden space-y-2">
+          <div>
+            <label class="text-xs font-medium text-gray-600">画像URL（HTTPS必須）</label>
+            <input id="bc-image-url" type="url" placeholder="https://example.com/banner.jpg"
+                   class="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+          </div>
+          <div>
+            <label class="text-xs font-medium text-gray-600">プレビューURL（省略可・同じURLでも可）</label>
+            <input id="bc-preview-url" type="url" placeholder="https://example.com/banner_preview.jpg"
+                   class="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="text-xs font-medium text-gray-600">配信スケジュール</label>
+            <select id="bc-schedule" onchange="updateBcFields()"
+                    class="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+              <option value="weekly">週１</option>
+              <option value="biweekly">隔週</option>
+              <option value="monthly">月１</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs font-medium text-gray-600">配信時刻</label>
+            <select id="bc-hour"
+                    class="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+              <option value="6">6時</option>
+              <option value="7">7時</option>
+              <option value="8">8時</option>
+              <option value="9" selected>9時</option>
+              <option value="10">10時</option>
+              <option value="11">11時</option>
+              <option value="12">12時</option>
+              <option value="18">18時</option>
+              <option value="19">19時</option>
+              <option value="20">20時</option>
+              <option value="21">21時</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="bc-dow-field">
+          <label class="text-xs font-medium text-gray-600">曜日</label>
+          <select id="bc-dow"
+                  class="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+            <option value="0">月曜日</option>
+            <option value="1">火曜日</option>
+            <option value="2">水曜日</option>
+            <option value="3">木曜日</option>
+            <option value="4">金曜日</option>
+            <option value="5">土曜日</option>
+            <option value="6">日曜日</option>
+          </select>
+        </div>
+
+        <div id="bc-dom-field" class="hidden">
+          <label class="text-xs font-medium text-gray-600">配信日（毎月）</label>
+          <select id="bc-dom"
+                  class="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+            ${Array.from({length:28},(_,i)=>`<option value="${i+1}">${i+1}日</option>`).join('')}
+          </select>
+        </div>
+
+        <button onclick="createBroadcast()"
+                class="w-full bg-blue-500 hover:bg-blue-600 text-white py-2.5 rounded-lg text-sm font-medium transition-colors">
+          スケジュール登録
+        </button>
+      </div>
+    </div>
+
+    <!-- 登録済み一覧 -->
+    <div id="broadcast-list"></div>
+    <p id="broadcast-empty" class="text-center text-gray-400 text-sm py-6 hidden">登録されたスケジュールはありません</p>
+
   </div>
 
   <!-- 凡例 -->
@@ -282,16 +398,20 @@ function setView(v) {
   view = v;
   document.getElementById('month-view').classList.toggle('hidden', v !== 'month');
   document.getElementById('year-view').classList.toggle('hidden',  v !== 'year');
+  document.getElementById('broadcast-view').classList.toggle('hidden', v !== 'broadcast');
+  // 地区タブはカレンダービューのみ表示
+  document.querySelectorAll('[id^="tab-"]').forEach(el => el.parentElement.classList.toggle('hidden', v === 'broadcast'));
   const act = 'flex-1 py-1.5 rounded-lg text-sm font-medium bg-blue-500 text-white';
   const def = 'flex-1 py-1.5 rounded-lg text-sm font-medium bg-white text-gray-600 hover:bg-gray-100';
-  document.getElementById('btn-month').className = v === 'month' ? act : def;
-  document.getElementById('btn-year').className  = v === 'year'  ? act : def;
+  document.getElementById('btn-month').className     = v === 'month'     ? act : def;
+  document.getElementById('btn-year').className      = v === 'year'      ? act : def;
+  document.getElementById('btn-broadcast').className = v === 'broadcast' ? act : def;
   if (v === 'year') {
-    // 月表示の年月から年度オフセットを同期
     const currentFY = month >= 4 ? year : year - 1;
     fyOffset = currentFY - baseFiscalYear();
     loadYearView();
   }
+  if (v === 'broadcast') loadBroadcasts();
 }
 
 // ------------------------------------------------------------------ //
@@ -582,6 +702,173 @@ async function post(dateKey, types) {
 
 function prevMonth() { month--; if (month < 1) { month = 12; year--; } loadSchedule(); }
 function nextMonth() { month++; if (month > 12) { month = 1; year++; } loadSchedule(); }
+
+// ------------------------------------------------------------------ //
+//  広告ブロードキャスト管理                                             //
+// ------------------------------------------------------------------ //
+const DOW_JP = ['月', '火', '水', '木', '金', '土', '日'];
+const SCHEDULE_JP = { weekly: '週１', biweekly: '隔週', monthly: '月１' };
+
+// 月選択 <select> の options を動的生成
+(function() {
+  const sel = document.getElementById('bc-dom');
+  if (sel && sel.children.length === 0) {
+    for (let i = 1; i <= 28; i++) {
+      const o = document.createElement('option');
+      o.value = i; o.textContent = `${i}日`;
+      sel.appendChild(o);
+    }
+  }
+})();
+
+function toggleNewForm() {
+  const form = document.getElementById('new-broadcast-form');
+  const icon = document.getElementById('form-toggle-icon');
+  const hidden = form.classList.toggle('hidden');
+  icon.textContent = hidden ? '▼' : '▲';
+}
+
+function updateBcFields() {
+  const type     = document.querySelector('input[name="bc-type"]:checked')?.value || 'text';
+  const schedule = document.getElementById('bc-schedule').value;
+  document.getElementById('bc-text-field').classList.toggle('hidden', type !== 'text');
+  document.getElementById('bc-image-fields').classList.toggle('hidden', type !== 'image');
+  document.getElementById('bc-dow-field').classList.toggle('hidden', schedule === 'monthly');
+  document.getElementById('bc-dom-field').classList.toggle('hidden', schedule !== 'monthly');
+}
+
+async function createBroadcast() {
+  const name     = document.getElementById('bc-name').value.trim();
+  const type     = document.querySelector('input[name="bc-type"]:checked')?.value || 'text';
+  const schedule = document.getElementById('bc-schedule').value;
+  const hour     = parseInt(document.getElementById('bc-hour').value);
+
+  if (!name) { alert('名前を入力してください'); return; }
+
+  const body = { name, type, schedule, hour, enabled: true };
+
+  if (type === 'text') {
+    const text = document.getElementById('bc-text').value.trim();
+    if (!text) { alert('テキスト内容を入力してください'); return; }
+    body.text = text;
+  } else {
+    const imageUrl = document.getElementById('bc-image-url').value.trim();
+    if (!imageUrl) { alert('画像URLを入力してください'); return; }
+    body.image_url  = imageUrl;
+    body.preview_url = document.getElementById('bc-preview-url').value.trim() || imageUrl;
+  }
+
+  if (schedule !== 'monthly') {
+    body.day_of_week = parseInt(document.getElementById('bc-dow').value);
+  } else {
+    body.day_of_month = parseInt(document.getElementById('bc-dom').value);
+  }
+
+  const res = await authFetch('/api/broadcasts', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) { alert('登録に失敗しました'); return; }
+
+  // フォームリセット
+  document.getElementById('bc-name').value = '';
+  document.getElementById('bc-text').value = '';
+  document.getElementById('bc-image-url').value = '';
+  document.getElementById('bc-preview-url').value = '';
+  document.getElementById('new-broadcast-form').classList.add('hidden');
+  document.getElementById('form-toggle-icon').textContent = '▼';
+  await loadBroadcasts();
+}
+
+async function loadBroadcasts() {
+  const res = await authFetch('/api/broadcasts');
+  const list = await res.json();
+  renderBroadcasts(list);
+}
+
+function renderBroadcasts(list) {
+  const container = document.getElementById('broadcast-list');
+  const empty     = document.getElementById('broadcast-empty');
+  container.innerHTML = '';
+
+  if (!list || list.length === 0) {
+    empty.classList.remove('hidden');
+    return;
+  }
+  empty.classList.add('hidden');
+
+  list.forEach(b => {
+    const scheduleLabel = _scheduleLabel(b);
+    const typeLabel = b.type === 'image' ? '🖼 画像' : '💬 テキスト';
+    const preview = b.type === 'text'
+      ? (b.text || '').slice(0, 40) + ((b.text || '').length > 40 ? '…' : '')
+      : b.image_url || '';
+
+    const card = document.createElement('div');
+    card.className = 'bg-white rounded-xl shadow-sm p-4';
+    card.innerHTML = `
+      <div class="flex items-start justify-between gap-2 mb-2">
+        <div class="min-w-0">
+          <div class="font-semibold text-gray-800 text-sm truncate">${escHtml(b.name)}</div>
+          <div class="text-xs text-gray-500 mt-0.5">${typeLabel} ／ ${scheduleLabel}</div>
+          <div class="text-xs text-gray-400 mt-0.5 truncate">${escHtml(preview)}</div>
+        </div>
+        <label class="flex items-center gap-1.5 flex-shrink-0 cursor-pointer">
+          <span class="text-xs text-gray-500">${b.enabled ? '有効' : '無効'}</span>
+          <div class="relative">
+            <input type="checkbox" class="sr-only peer" ${b.enabled ? 'checked' : ''}
+                   onchange="toggleBroadcast('${b.id}', this.checked)">
+            <div class="w-9 h-5 bg-gray-200 peer-checked:bg-blue-500 rounded-full transition-colors peer-focus:ring-2 peer-focus:ring-blue-300"></div>
+            <div class="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4 shadow-sm"></div>
+          </div>
+        </label>
+      </div>
+      <div class="flex gap-2 mt-2">
+        <button onclick="sendBroadcastNow('${b.id}')"
+                class="flex-1 bg-green-500 hover:bg-green-600 text-white py-1.5 rounded-lg text-xs font-medium transition-colors">
+          今すぐ送信
+        </button>
+        <button onclick="deleteBroadcast('${b.id}')"
+                class="px-3 bg-gray-100 hover:bg-red-100 text-gray-500 hover:text-red-600 py-1.5 rounded-lg text-xs font-medium transition-colors">
+          削除
+        </button>
+      </div>
+    `;
+    container.appendChild(card);
+  });
+}
+
+function _scheduleLabel(b) {
+  const base = SCHEDULE_JP[b.schedule] || b.schedule;
+  const h = `${b.hour}:00`;
+  if (b.schedule === 'monthly') return `${base} ${b.day_of_month}日 ${h}`;
+  return `${base} ${DOW_JP[b.day_of_week]}曜 ${h}`;
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+async function sendBroadcastNow(bid) {
+  if (!confirm('全ユーザーに今すぐ送信しますか？')) return;
+  const res = await authFetch(`/api/broadcasts/${bid}/send`, { method: 'POST' });
+  if (res.ok) alert('送信しました');
+  else alert('送信に失敗しました');
+}
+
+async function toggleBroadcast(bid, enabled) {
+  await authFetch(`/api/broadcasts/${bid}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled }),
+  });
+  await loadBroadcasts();
+}
+
+async function deleteBroadcast(bid) {
+  if (!confirm('このスケジュールを削除しますか？')) return;
+  await authFetch(`/api/broadcasts/${bid}`, { method: 'DELETE' });
+  await loadBroadcasts();
+}
 </script>
 </body>
 </html>

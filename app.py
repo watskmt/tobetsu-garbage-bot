@@ -24,6 +24,7 @@ from linebot.v3.messaging import (
     Configuration,
     MessagingApi,
     MessageAction,
+    ImageMessage,
     PushMessageRequest,
     QuickReply,
     QuickReplyItem,
@@ -32,6 +33,7 @@ from linebot.v3.messaging import (
 )
 from linebot.v3.webhooks import FollowEvent, MessageEvent, TextMessageContent
 
+import broadcast_store
 import user_store
 from calendar_parser import GarbageCalendar, DISTRICT_NAMES
 
@@ -78,6 +80,83 @@ def _send_daily_notifications():
 _scheduler = BackgroundScheduler(timezone="Asia/Tokyo")
 _scheduler.add_job(_send_daily_notifications, "cron", minute="*")
 _scheduler.start()
+
+
+def _next_occurrence(day_of_week: int, hour: int) -> datetime:
+    """次の指定曜日・時刻を返す。APScheduler/Python 規約: 0=月曜〜6=日曜"""
+    now = datetime.now(JST)
+    days_ahead = (day_of_week - now.weekday()) % 7
+    if days_ahead == 0 and now.hour >= hour:
+        days_ahead = 7
+    return (now + timedelta(days=days_ahead)).replace(
+        hour=hour, minute=0, second=0, microsecond=0
+    )
+
+
+def _push_broadcast_to_all(broadcast: dict):
+    if broadcast["type"] == "text":
+        msg = TextMessage(text=broadcast["text"])
+    elif broadcast["type"] == "image":
+        msg = ImageMessage(
+            original_content_url=broadcast["image_url"],
+            preview_image_url=broadcast.get("preview_url") or broadcast["image_url"],
+        )
+    else:
+        return
+
+    users = user_store._load()
+    with ApiClient(config) as api_client:
+        api = MessagingApi(api_client)
+        for uid in users:
+            try:
+                api.push_message(PushMessageRequest(to=uid, messages=[msg]))
+            except Exception as e:
+                logger.error("broadcast push failed user=%s: %s", uid, e)
+
+
+def _add_broadcast_job(broadcast: dict):
+    bid = broadcast["id"]
+    schedule = broadcast.get("schedule", "weekly")
+    hour = int(broadcast.get("hour", 9))
+
+    def execute():
+        b = broadcast_store.get_broadcast(bid)
+        if b and b.get("enabled"):
+            _push_broadcast_to_all(b)
+
+    if schedule == "weekly":
+        _scheduler.add_job(
+            execute, "cron", id=f"bcast_{bid}",
+            day_of_week=int(broadcast.get("day_of_week", 0)),
+            hour=hour, minute=0, replace_existing=True,
+        )
+    elif schedule == "biweekly":
+        _scheduler.add_job(
+            execute, "interval", id=f"bcast_{bid}",
+            weeks=2, start_date=broadcast.get("start_date"),
+            replace_existing=True,
+        )
+    elif schedule == "monthly":
+        _scheduler.add_job(
+            execute, "cron", id=f"bcast_{bid}",
+            day=int(broadcast.get("day_of_month", 1)),
+            hour=hour, minute=0, replace_existing=True,
+        )
+
+
+def _remove_broadcast_job(bid: str):
+    try:
+        _scheduler.remove_job(f"bcast_{bid}")
+    except Exception:
+        pass
+
+
+for _b in broadcast_store.list_broadcasts():
+    if _b.get("enabled"):
+        try:
+            _add_broadcast_job(_b)
+        except Exception as _e:
+            logger.error("broadcast job load failed id=%s: %s", _b.get("id"), _e)
 
 # ------------------------------------------------------------------ #
 #  管理画面認証                                                        #
@@ -340,3 +419,55 @@ def _load_corrections_raw() -> dict:
         return {k: v for k, v in data.items() if not k.startswith("_")}
     except Exception:
         return {}
+
+
+# ------------------------------------------------------------------ #
+#  ブロードキャスト管理 API                                             #
+# ------------------------------------------------------------------ #
+
+@app.get("/api/broadcasts")
+def api_list_broadcasts(_=Depends(require_admin)):
+    return broadcast_store.list_broadcasts()
+
+
+@app.post("/api/broadcasts")
+async def api_create_broadcast(request: Request, _=Depends(require_admin)):
+    body = await request.json()
+    if body.get("schedule") == "biweekly":
+        dow = int(body.get("day_of_week", 0))
+        hour = int(body.get("hour", 9))
+        body["start_date"] = _next_occurrence(dow, hour).isoformat()
+    b = broadcast_store.create_broadcast(body)
+    if b.get("enabled"):
+        _add_broadcast_job(b)
+    return b
+
+
+@app.delete("/api/broadcasts/{bid}")
+def api_delete_broadcast(bid: str, _=Depends(require_admin)):
+    _remove_broadcast_job(bid)
+    if not broadcast_store.delete_broadcast(bid):
+        raise HTTPException(status_code=404, detail="not found")
+    return {"status": "ok"}
+
+
+@app.post("/api/broadcasts/{bid}/send")
+def api_send_broadcast_now(bid: str, _=Depends(require_admin)):
+    b = broadcast_store.get_broadcast(bid)
+    if not b:
+        raise HTTPException(status_code=404, detail="not found")
+    _push_broadcast_to_all(b)
+    return {"status": "ok"}
+
+
+@app.patch("/api/broadcasts/{bid}")
+async def api_patch_broadcast(bid: str, request: Request, _=Depends(require_admin)):
+    body = await request.json()
+    b = broadcast_store.update_broadcast(bid, body)
+    if not b:
+        raise HTTPException(status_code=404, detail="not found")
+    if b.get("enabled"):
+        _add_broadcast_job(b)
+    else:
+        _remove_broadcast_job(bid)
+    return b

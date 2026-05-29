@@ -27,6 +27,7 @@ jobs:
             git fetch origin master
             git checkout origin/master -- \
               app.py \
+              broadcast_store.py \
               calendar_parser.py \
               user_store.py \
               rules.json \
