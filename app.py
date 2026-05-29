@@ -72,6 +72,8 @@ def _send_daily_notifications():
     for t in targets:
         try:
             msg = calendar.get_today(t["district"])
+            if "収集なし" in msg:
+                continue
             _push_text(t["user_id"], f"【本日のごみ収集】\n{msg}")
         except Exception as e:
             logger.error("push failed user=%s: %s", t["user_id"], e)
