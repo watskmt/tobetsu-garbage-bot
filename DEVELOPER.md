@@ -9,11 +9,14 @@
 5. [収集ルールの管理](#5-収集ルールの管理)
 6. [例外日の管理](#6-例外日の管理)
 7. [管理画面の使い方](#7-管理画面の使い方)
-8. [認証・セキュリティ](#8-認証セキュリティ)
-9. [本番サーバー（AWS EC2）へのデプロイ](#9-本番サーバーaws-ec2へのデプロイ)
-10. [コード更新手順](#10-コード更新手順)
-11. [運用コマンド](#11-運用コマンド)
-12. [トラブルシューティング](#12-トラブルシューティング)
+8. [Push通知機能](#8-push通知機能)
+9. [広告ブロードキャスト機能](#9-広告ブロードキャスト機能)
+10. [運営者情報・法的文書](#10-運営者情報法的文書)
+11. [認証・セキュリティ](#11-認証セキュリティ)
+12. [本番サーバー（AWS EC2）へのデプロイ](#12-本番サーバーaws-ec2へのデプロイ)
+13. [コード更新手順](#13-コード更新手順)
+14. [運用コマンド](#14-運用コマンド)
+15. [トラブルシューティング](#15-トラブルシューティング)
 
 ---
 
@@ -21,8 +24,8 @@
 
 北海道当別町のごみ収集スケジュールを管理・通知する LINE Bot。
 
-- **LINEユーザー**向け：「今日」「明日」「１週間」「今月」でごみ収集日を確認
-- **管理者**向け：Web管理画面でカレンダーの例外日を設定
+- **LINEユーザー**向け：「今日」「明日」「１週間」「今月」でごみ収集日を確認、毎日の収集情報をPush通知で受信
+- **管理者**向け：Web管理画面でカレンダーの例外日設定・広告ブロードキャスト管理
 
 ### 技術スタック
 
@@ -32,6 +35,7 @@
 | LINE連携 | line-bot-sdk v3 |
 | スケジュール生成 | ルールベース（rules.json）＋動的追加生成 |
 | 例外設定 | corrections.json |
+| Push通知・広告スケジュール | APScheduler（BackgroundScheduler） |
 | 管理UI | バニラHTML/CSS/JS（static/admin.html） |
 | 本番環境 | AWS EC2 t2.micro + Nginx + Let's Encrypt |
 | ドメイン | DuckDNS（無料） |
@@ -54,16 +58,33 @@ FastAPI (app.py)
     │       ├── rules.json        ← 基本ルール（毎週の収集曜日）
     │       └── corrections.json  ← 例外日の上書き
     │
-    └── user_store.py             ← ユーザーの地区設定（users.json）
+    ├── user_store.py             ← ユーザーの地区設定・通知時刻（users.json）
+    │
+    ├── broadcast_store.py        ← 広告ブロードキャストスケジュール（broadcasts.json）
+    │
+    └── APScheduler（BackgroundScheduler）
+            │
+            ├── 毎分: 通知時刻に一致するユーザーへ当日収集情報をPush送信
+            └── 週1/隔週/月1: ブロードキャスト広告をPush送信
 
 管理者
     │  ブラウザ（要ログイン）
     ▼
 https://<ドメイン>/admin
-    │  POST /admin/login   ← パスワード認証 → BearerトークンをlocalStorageに保存
+    │  POST /admin/login          ← パスワード認証 → BearerトークンをlocalStorageに保存
     │
-    ├── GET  /api/schedule    ← 月間スケジュール取得（Bearer認証必須）
-    └── POST /api/correction  ← 例外日の保存（Bearer認証必須）
+    ├── GET  /api/schedule        ← 月間スケジュール取得（Bearer認証必須）
+    ├── POST /api/correction      ← 例外日の保存（Bearer認証必須）
+    ├── GET  /api/broadcasts      ← 広告スケジュール一覧（Bearer認証必須）
+    ├── POST /api/broadcasts      ← 広告スケジュール作成（Bearer認証必須）
+    ├── POST /api/broadcasts/{id}/send ← 今すぐ送信（Bearer認証必須）
+    ├── PATCH /api/broadcasts/{id}    ← 有効/無効切替（Bearer認証必須）
+    └── DELETE /api/broadcasts/{id}  ← スケジュール削除（Bearer認証必須）
+
+一般ユーザー（認証不要）
+    ├── GET /privacy              ← プライバシーポリシーページ
+    ├── GET /terms                ← 利用規約ページ
+    └── GET /api/bot-info         ← 運営者情報JSON
 ```
 
 ---
@@ -72,17 +93,21 @@ https://<ドメイン>/admin
 
 ```
 tobetsu-garbage-bot/
-├── app.py               # FastAPIメインアプリ（LINEボット＋管理API＋認証）
+├── app.py               # FastAPIメインアプリ（LINEボット＋管理API＋スケジューラ）
 ├── calendar_parser.py   # スケジュール生成・管理クラス
-├── user_store.py        # ユーザー地区設定の読み書き
+├── user_store.py        # ユーザー地区設定・通知時刻の読み書き
+├── broadcast_store.py   # 広告ブロードキャストスケジュールの読み書き
 ├── rules.json           # 各地区の収集曜日ルール（要編集）
 ├── corrections.json     # 例外日の手動修正（管理画面から自動更新）
-├── users.json           # ユーザー別地区設定（自動生成）
+├── users.json           # ユーザー別地区設定・通知時刻（自動生成）
+├── broadcasts.json      # 広告ブロードキャストスケジュール（管理画面から自動更新）
 ├── requirements.txt     # Pythonパッケージ一覧
 ├── Procfile             # Heroku互換起動設定
 ├── .env                 # 環境変数（Gitに含めない）
 ├── static/
-│   └── admin.html       # 管理Webページ
+│   ├── admin.html       # 管理Webページ（カレンダー編集・広告管理）
+│   ├── privacy.html     # プライバシーポリシーページ
+│   └── terms.html       # 利用規約ページ
 └── cache/               # PDF解析キャッシュ（Gitに含めない）
 ```
 
@@ -94,8 +119,7 @@ tobetsu-garbage-bot/
 | `cache/` | 自動生成される大きなキャッシュ |
 | `venv/` | 環境依存のパッケージ群 |
 
-> ⚠️ `corrections.json` と `users.json` はGit管理されています。
-> EC2サーバーでの変更を手元に取り込む場合はサーバーからscpで取得してください。
+> ⚠️ `corrections.json`・`users.json`・`broadcasts.json` はGit管理されていますが、EC2サーバーでの変更が保護されます（デプロイスクリプトで上書きしない）。
 
 ---
 
@@ -117,6 +141,9 @@ LINE_CHANNEL_ACCESS_TOKEN=xxxx
 LINE_CHANNEL_SECRET=xxxx
 ADMIN_PASSWORD=任意のパスワード
 ADMIN_SECRET_KEY=$(openssl rand -hex 32)
+BOT_OPERATOR_NAME=当別町ごみ収集日Bot運営者
+BOT_OPERATOR_EMAIL=your@example.com
+BOT_BASE_URL=https://tobetsu-bot.duckdns.org
 EOF
 
 # 起動
@@ -184,12 +211,10 @@ cloudflared tunnel --url http://localhost:8000
 ### ルール変更後の反映
 
 ```bash
-# ローカルから転送
 scp -i ~/Downloads/tobetsu-key.pem \
   /Users/watsk/tobetsu-garbage-bot/rules.json \
   ec2-user@18.180.39.33:/home/ec2-user/tobetsu-garbage-bot/
 
-# EC2でサービス再起動（メモリ上のスケジュールを再生成）
 sudo systemctl restart tobetsu-bot
 ```
 
@@ -228,7 +253,7 @@ sudo systemctl restart tobetsu-bot
 ### 年間ビュー
 
 - **‹ 年度 ›** ボタンで前年度・翌年度に移動
-- 未生成の年度は **初回表示時に自動生成**される
+- 未生成の年度は初回表示時に自動生成される
 - 月をクリックすると月別編集画面に遷移
 
 ### 月別ビュー
@@ -253,16 +278,183 @@ sudo systemctl restart tobetsu-bot
    - **収集なし**：その日の収集を全てキャンセル
    - **ルールに戻す**：例外設定を削除
 
+### 広告タブ（📢 広告）
+
+管理画面の「📢 広告」タブで広告ブロードキャストを管理します（詳細は[セクション9](#9-広告ブロードキャスト機能)）。
+
 ---
 
-## 8. 認証・セキュリティ
+## 8. Push通知機能
+
+### 概要
+
+ユーザーが設定した時刻（正時のみ）に、当日のごみ収集情報をLINE Push通知で送信する機能です。収集なしの日は通知を送信しません。
+
+### 仕組み
+
+- APScheduler の BackgroundScheduler が**毎分**起動
+- JST 現在時刻（`HH:00` 形式）と一致する通知時刻を設定したユーザーを `users.json` から抽出
+- 各ユーザーの地区に対して `get_today()` を呼び出し、収集情報をPush送信
+- `"収集なし"` が含まれる場合は送信をスキップ
+
+### タイムゾーン
+
+`calendar_parser.py` の日付取得は `datetime.now(JST).date()` を使用しています。EC2 のシステムタイムゾーン（UTC）に依存しないため、早朝の通知でも正しく当日の収集情報を返します。
+
+### users.json のデータ構造
+
+```json
+{
+  "Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx": {
+    "district": 3,
+    "notify_time": "07:00"
+  }
+}
+```
+
+| フィールド | 説明 |
+|-----------|------|
+| `district` | 収集地区（1〜4） |
+| `notify_time` | 通知時刻（`"HH:00"` 形式、未設定なら通知なし） |
+
+### ユーザー向けコマンド
+
+| 送信内容 | 動作 |
+|---------|------|
+| `通知設定` | 時刻選択クイックリプライを表示 |
+| `通知7時` / `7時通知` / `毎朝8時` | 毎日その時刻に通知を設定（正時のみ） |
+| `通知オフ` / `通知OFF` / `通知なし` | 通知を停止 |
+| `通知確認` | 現在の設定を表示 |
+
+---
+
+## 9. 広告ブロードキャスト機能
+
+### 概要
+
+管理画面からテキストまたは画像バナーを、設定したスケジュールで全ユーザーにPush送信する機能です。
+
+### スケジュール種別
+
+| 種別 | APScheduler | 設定項目 |
+|------|-------------|---------|
+| 週1 | CronTrigger | 曜日・時刻 |
+| 隔週 | IntervalTrigger（2週間間隔） | 曜日・時刻（初回実行日を自動計算） |
+| 月1 | CronTrigger | 日付（1〜28日）・時刻 |
+
+> 隔週スケジュールは作成時に次回実行日時（`start_date`）を計算して `broadcasts.json` に保存します。アプリ再起動時もこの `start_date` をもとにリズムが引き継がれます。
+
+### broadcasts.json のデータ構造
+
+```json
+[
+  {
+    "id": "a1b2c3d4",
+    "name": "月初キャンペーン",
+    "type": "text",
+    "text": "今月もよろしくお願いします。",
+    "schedule": "monthly",
+    "day_of_month": 1,
+    "hour": 9,
+    "enabled": true,
+    "created_at": "2026-05-30T10:00:00+09:00"
+  },
+  {
+    "id": "e5f6g7h8",
+    "name": "バナー広告",
+    "type": "image",
+    "image_url": "https://example.com/banner.jpg",
+    "preview_url": "https://example.com/banner_preview.jpg",
+    "schedule": "weekly",
+    "day_of_week": 0,
+    "hour": 8,
+    "enabled": true,
+    "created_at": "2026-05-30T10:00:00+09:00"
+  }
+]
+```
+
+### 画像バナーの注意点
+
+- `image_url` と `preview_url` は **HTTPS 公開 URL** が必須（LINE API の要件）
+- `preview_url` を省略した場合は `image_url` と同じURLが使用される
+
+### 管理画面での操作
+
+1. 「📢 広告」タブを開く
+2. 「＋ 新規広告スケジュール」を展開してフォームを入力
+3. 登録後、一覧に表示される
+4. 各スケジュールの操作：
+   - **有効/無効トグル**：スケジューラへの登録・解除
+   - **今すぐ送信**：即時に全ユーザーへPush（確認ダイアログあり）
+   - **削除**：スケジュールを削除
+
+### API エンドポイント（すべてBearer認証必須）
+
+| メソッド | パス | 説明 |
+|---------|------|------|
+| GET | `/api/broadcasts` | スケジュール一覧 |
+| POST | `/api/broadcasts` | スケジュール作成 |
+| PATCH | `/api/broadcasts/{id}` | 有効/無効切替・内容更新 |
+| DELETE | `/api/broadcasts/{id}` | スケジュール削除 |
+| POST | `/api/broadcasts/{id}/send` | 今すぐ全ユーザーへ送信 |
+
+---
+
+## 10. 運営者情報・法的文書
+
+### 概要
+
+LINE Bot を公式に運用するために必要な、プライバシーポリシーと利用規約のページを提供します。
+
+### ページ一覧
+
+| URL | 内容 |
+|-----|------|
+| `/privacy` | プライバシーポリシー |
+| `/terms` | 利用規約 |
+| `/api/bot-info` | 運営者情報 JSON（認証不要） |
+
+`/privacy` と `/terms` は `/api/bot-info` から運営者名・連絡先を動的に取得して表示します。
+
+### 環境変数
+
+| 変数 | 用途 | 例 |
+|------|------|-----|
+| `BOT_OPERATOR_NAME` | 運営者名（ページ・Bot応答に表示） | `当別町ごみ収集日Bot運営者` |
+| `BOT_OPERATOR_EMAIL` | 問い合わせ先メール | `your@example.com` |
+| `BOT_BASE_URL` | サービスのベースURL | `https://tobetsu-bot.duckdns.org` |
+
+### Botキーワード
+
+| 送信内容 | 応答 |
+|---------|------|
+| `このBotについて` / `ヘルプ` / `運営情報` | 運営者情報・リンク一覧 |
+| `プライバシーポリシー` | `/privacy` のURL |
+| `利用規約` | `/terms` のURL |
+
+### LINE Developers コンソールへの設定
+
+LINE の審査・運用要件として、チャネル設定に以下のURLを登録してください。
+
+- **プライバシーポリシーURL**：`https://tobetsu-bot.duckdns.org/privacy`
+- **利用規約URL**：`https://tobetsu-bot.duckdns.org/terms`
+
+---
+
+## 11. 認証・セキュリティ
 
 ### 環境変数
 
 | 変数 | 用途 | 必須 |
 |------|------|------|
+| `LINE_CHANNEL_ACCESS_TOKEN` | LINE Messaging API トークン | ✅ |
+| `LINE_CHANNEL_SECRET` | Webhook 署名検証キー | ✅ |
 | `ADMIN_PASSWORD` | 管理画面ログインパスワード | ✅ |
 | `ADMIN_SECRET_KEY` | Bearerトークン署名用シークレット | ✅ |
+| `BOT_OPERATOR_NAME` | 運営者名 | 推奨 |
+| `BOT_OPERATOR_EMAIL` | 問い合わせ先メール | 推奨 |
+| `BOT_BASE_URL` | サービスのベースURL | 推奨 |
 
 ### トークンの仕組み
 
@@ -286,9 +478,8 @@ sudo systemctl restart tobetsu-bot
 ### 不正アクセス時の対応
 
 ```bash
-# ADMIN_SECRET_KEY を変更して再起動するだけで全セッション強制ログアウト
-# EC2側の .env を編集
 vi /home/ec2-user/tobetsu-garbage-bot/.env
+# ADMIN_SECRET_KEY を変更して保存
 
 sudo systemctl restart tobetsu-bot
 ```
@@ -301,7 +492,7 @@ openssl rand -hex 32
 
 ---
 
-## 9. 本番サーバー（AWS EC2）へのデプロイ
+## 12. 本番サーバー（AWS EC2）へのデプロイ
 
 ### サーバー情報
 
@@ -319,50 +510,71 @@ openssl rand -hex 32
 ssh -i ~/Downloads/tobetsu-key.pem ec2-user@18.180.39.33
 ```
 
-### .env の必須設定
+### .env の設定（EC2側）
 
 ```env
 LINE_CHANNEL_ACCESS_TOKEN=xxxx
 LINE_CHANNEL_SECRET=xxxx
 ADMIN_PASSWORD=強いパスワード
-ADMIN_SECRET_KEY=openssl rand -hex 32 で生成した値
+ADMIN_SECRET_KEY=（openssl rand -hex 32 で生成）
+BOT_OPERATOR_NAME=当別町ごみ収集日Bot運営者
+BOT_OPERATOR_EMAIL=your@example.com
+BOT_BASE_URL=https://tobetsu-bot.duckdns.org
 ```
 
 ---
 
-## 10. コード更新手順
+## 13. コード更新手順
 
-### ファイル転送 → 再起動
+### GitHub Actions（自動デプロイ）
 
-```bash
-# 複数ファイルをまとめて転送
-scp -i ~/Downloads/tobetsu-key.pem \
-  /Users/watsk/tobetsu-garbage-bot/app.py \
-  /Users/watsk/tobetsu-garbage-bot/calendar_parser.py \
-  /Users/watsk/tobetsu-garbage-bot/static/admin.html \
-  ec2-user@18.180.39.33:/home/ec2-user/tobetsu-garbage-bot/
+`master` ブランチへのプッシュで自動デプロイが実行されます。
 
-# admin.html は static/ サブディレクトリに転送
-scp -i ~/Downloads/tobetsu-key.pem \
-  /Users/watsk/tobetsu-garbage-bot/static/admin.html \
-  ec2-user@18.180.39.33:/home/ec2-user/tobetsu-garbage-bot/static/
+デプロイ対象ファイル（サーバー側データは保護）：
 
-# サービス再起動
-sudo systemctl restart tobetsu-bot
-sudo systemctl status tobetsu-bot
+```
+app.py / broadcast_store.py / calendar_parser.py / user_store.py
+rules.json / requirements.txt / static/admin.html
+static/privacy.html / static/terms.html / DEVELOPER.md / USER.md
 ```
 
-### corrections.json をEC2からローカルへバックアップ
+保護されるファイル（デプロイで上書きされない）：
+
+```
+corrections.json / users.json / broadcasts.json / .env
+```
+
+### 手動転送 → 再起動
+
+```bash
+scp -i ~/Downloads/tobetsu-key.pem \
+  /Users/watsk/tobetsu-garbage-bot/app.py \
+  /Users/watsk/tobetsu-garbage-bot/broadcast_store.py \
+  /Users/watsk/tobetsu-garbage-bot/calendar_parser.py \
+  ec2-user@18.180.39.33:/home/ec2-user/tobetsu-garbage-bot/
+
+scp -i ~/Downloads/tobetsu-key.pem \
+  /Users/watsk/tobetsu-garbage-bot/static/admin.html \
+  /Users/watsk/tobetsu-garbage-bot/static/privacy.html \
+  /Users/watsk/tobetsu-garbage-bot/static/terms.html \
+  ec2-user@18.180.39.33:/home/ec2-user/tobetsu-garbage-bot/static/
+
+sudo systemctl restart tobetsu-bot
+```
+
+### サーバー側データのバックアップ
 
 ```bash
 scp -i ~/Downloads/tobetsu-key.pem \
   ec2-user@18.180.39.33:/home/ec2-user/tobetsu-garbage-bot/corrections.json \
-  /Users/watsk/tobetsu-garbage-bot/corrections.json
+  ec2-user@18.180.39.33:/home/ec2-user/tobetsu-garbage-bot/users.json \
+  ec2-user@18.180.39.33:/home/ec2-user/tobetsu-garbage-bot/broadcasts.json \
+  /Users/watsk/tobetsu-garbage-bot/
 ```
 
 ---
 
-## 11. 運用コマンド
+## 14. 運用コマンド
 
 ### サービス管理
 
@@ -376,8 +588,8 @@ sudo systemctl start tobetsu-bot    # 起動
 ### ログ確認
 
 ```bash
-sudo journalctl -u tobetsu-bot -f          # リアルタイム
-sudo journalctl -u tobetsu-bot -n 100      # 直近100行
+sudo journalctl -u tobetsu-bot -f             # リアルタイム
+sudo journalctl -u tobetsu-bot -n 100         # 直近100行
 sudo journalctl -u tobetsu-bot --since today  # 今日分
 ```
 
@@ -392,13 +604,13 @@ sudo systemctl restart nginx     # 再起動
 ### SSL証明書（Let's Encrypt）
 
 ```bash
-sudo certbot renew --dry-run      # 自動更新テスト
+sudo certbot renew --dry-run        # 自動更新テスト
 sudo certbot renew --force-renewal  # 強制更新
 ```
 
 ---
 
-## 12. トラブルシューティング
+## 15. トラブルシューティング
 
 ### LINEボットが応答しない
 
@@ -409,13 +621,38 @@ sudo systemctl status nginx
 # LINE Developers Console で Webhook URL を確認・検証
 ```
 
+### Push通知が届かない
+
+```bash
+# ユーザーの通知時刻設定を確認
+cat /home/ec2-user/tobetsu-garbage-bot/users.json
+
+# スケジューラのログを確認（"push failed" エラーが出ていないか）
+sudo journalctl -u tobetsu-bot --since today | grep push
+```
+
+- LINE Messaging API の Push 送信は有料プランが必要な場合があります
+- 収集なしの日は意図的に通知を送信しません
+
+### 広告が送信されない
+
+```bash
+# broadcasts.json の内容確認
+cat /home/ec2-user/tobetsu-garbage-bot/broadcasts.json
+
+# スケジューラログを確認
+sudo journalctl -u tobetsu-bot --since today | grep broadcast
+```
+
+- `enabled: false` になっていないか確認
+- 隔週スケジュールの `start_date` が正しく設定されているか確認
+
 ### 管理画面にログインできない
 
 - `.env` に `ADMIN_PASSWORD` と `ADMIN_SECRET_KEY` が設定されているか確認
 - ブラウザの localStorage をクリアして再試行（DevTools → Application → Local Storage）
 
 ```bash
-# EC2側で .env の内容確認
 grep ADMIN /home/ec2-user/tobetsu-garbage-bot/.env
 sudo systemctl restart tobetsu-bot
 ```
@@ -423,7 +660,7 @@ sudo systemctl restart tobetsu-bot
 ### 管理画面が 401 エラーを返す
 
 ```bash
-# トークンの再発行（ADMIN_SECRET_KEY を変更して再起動）
+# ADMIN_SECRET_KEY を変更して再起動すると全セッション強制ログアウト
 sudo systemctl restart tobetsu-bot
 # ブラウザで再ログイン
 ```
@@ -431,7 +668,6 @@ sudo systemctl restart tobetsu-bot
 ### スケジュールがおかしい
 
 ```bash
-# スケジュール内容を確認（EC2側）
 curl -H "Authorization: Bearer <token>" \
   "http://localhost:8000/api/schedule?district=1&year=2026&month=6"
 
@@ -442,7 +678,7 @@ sudo systemctl restart tobetsu-bot
 
 ### EC2再起動後
 
-Elastic IP 固定済みのため IP は変わらない。systemd で自動起動設定済み。
+Elastic IP 固定済みのためIPは変わらない。systemd で自動起動設定済み。
 
 ```bash
 sudo systemctl status tobetsu-bot
