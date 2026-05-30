@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>利用規約｜当別町ごみ収集日Bot</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 text-gray-800">
+<div class="max-w-2xl mx-auto px-4 py-8">
+
+  <div class="mb-6">
+    <p class="text-xs text-gray-400 mb-1">当別町ごみ収集日Bot</p>
+    <h1 class="text-2xl font-bold text-gray-900">利用規約</h1>
+    <p id="updated-date" class="text-xs text-gray-400 mt-1"></p>
+  </div>
+
+  <div class="space-y-6 text-sm leading-relaxed">
+
+    <section>
+      <p>
+        本利用規約（以下「本規約」）は、<strong id="operator-name">当別町ごみ収集日Bot運営者</strong>（以下「運営者」）が提供する
+        LINEBot「当別町ごみ収集日Bot」（以下「本サービス」）の利用条件を定めるものです。
+        本サービスをご利用になった場合、本規約に同意したものとみなします。
+      </p>
+    </section>
+
+    <section>
+      <h2 class="font-bold text-base text-gray-900 mb-2">1. サービス内容</h2>
+      <p>
+        本サービスは、北海道当別町が公表するごみ収集スケジュールをもとに、
+        収集日・収集区分の案内および通知を提供します。
+        収集情報は公開データを利用しており、運営者が独自に作成したものではありません。
+      </p>
+    </section>
+
+    <section>
+      <h2 class="font-bold text-base text-gray-900 mb-2">2. 利用条件</h2>
+      <ul class="list-disc list-inside space-y-1 text-gray-700">
+        <li>本サービスはLINEアカウントを持つ方であればどなたでも無料でご利用いただけます。</li>
+        <li>LINEの利用規約を遵守してください。</li>
+        <li>個人の利用を目的とし、商業目的での利用はお断りします。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2 class="font-bold text-base text-gray-900 mb-2">3. 禁止事項</h2>
+      <ul class="list-disc list-inside space-y-1 text-gray-700">
+        <li>本サービスへの不正アクセスや過度な負荷をかける行為</li>
+        <li>本サービスを利用した迷惑行為・詐欺行為</li>
+        <li>本サービスの情報を無断で商業利用すること</li>
+        <li>その他、運営者が不適切と判断する行為</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2 class="font-bold text-base text-gray-900 mb-2">4. 免責事項</h2>
+      <ul class="list-disc list-inside space-y-1 text-gray-700">
+        <li>
+          収集スケジュールは北海道当別町の発表に基づきますが、
+          変更・誤りが含まれる場合があります。
+          実際の収集日は当別町の公式情報を必ずご確認ください。
+        </li>
+        <li>通信障害・システム不具合によるサービス停止・通知遅延について、運営者は責任を負いません。</li>
+        <li>本サービスの利用により生じた損害について、運営者は一切の責任を負いません。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2 class="font-bold text-base text-gray-900 mb-2">5. サービスの変更・停止</h2>
+      <p>
+        運営者は予告なく本サービスの内容変更・一時停止・終了を行う場合があります。
+        重要な変更については、可能な範囲でBot上でお知らせします。
+      </p>
+    </section>
+
+    <section>
+      <h2 class="font-bold text-base text-gray-900 mb-2">6. 規約の変更</h2>
+      <p>
+        運営者は必要に応じて本規約を改定できます。
+        改定後は本ページに掲載し、継続してご利用いただいた場合は改定後の規約に同意したものとみなします。
+      </p>
+    </section>
+
+    <section>
+      <h2 class="font-bold text-base text-gray-900 mb-2">7. お問い合わせ</h2>
+      <div id="contact-info" class="bg-gray-100 rounded-lg px-4 py-3 text-gray-700"></div>
+    </section>
+
+  </div>
+
+  <div class="mt-8 pt-6 border-t border-gray-200 text-center">
+    <p class="text-xs text-gray-400">© <span id="copyright-year"></span> <span class="operator-name-ref"></span></p>
+    <a href="/privacy" class="text-xs text-blue-500 hover:underline mt-1 inline-block">プライバシーポリシー</a>
+  </div>
+</div>
+
+<script>
+async function loadInfo() {
+  try {
+    const res = await fetch('/api/bot-info');
+    const info = await res.json();
+    document.getElementById('operator-name').textContent = info.operator_name;
+    document.querySelectorAll('.operator-name-ref').forEach(el => el.textContent = info.operator_name);
+
+    const contact = document.getElementById('contact-info');
+    contact.innerHTML = `<p class="font-medium mb-1">${info.operator_name}</p>` +
+      (info.operator_email ? `<p>メール: <a href="mailto:${info.operator_email}" class="text-blue-500">${info.operator_email}</a></p>` : '');
+  } catch(e) {}
+
+  document.getElementById('copyright-year').textContent = new Date().getFullYear();
+
+  const d = new Date();
+  document.getElementById('updated-date').textContent =
+    `最終更新: ${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
+}
+loadInfo();
+</script>
+</body>
+</html>
