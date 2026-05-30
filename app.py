@@ -166,6 +166,10 @@ for _b in broadcast_store.list_broadcasts():
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 _ADMIN_SECRET  = os.environ.get("ADMIN_SECRET_KEY") or secrets.token_hex(32)
 
+BOT_OPERATOR_NAME  = os.environ.get("BOT_OPERATOR_NAME", "当別町ごみ収集日Bot運営者")
+BOT_OPERATOR_EMAIL = os.environ.get("BOT_OPERATOR_EMAIL", "")
+BOT_BASE_URL       = os.environ.get("BOT_BASE_URL", "")
+
 
 def _admin_token() -> str:
     """サーバー秘密鍵から管理者トークンを生成（決定論的HMAC）"""
@@ -342,6 +346,14 @@ def handle_message(event):
         calendar.clear_cache()
         calendar.reload()
         reply(event, "カレンダーデータを再取得しました。")
+    elif text in ("このBotについて", "このbotについて", "運営情報", "運営者", "Bot情報", "bot情報", "ヘルプ", "help"):
+        reply(event, _bot_info_text(), quick_reply=MAIN_QUICK_REPLY)
+    elif text in ("プライバシーポリシー", "プライバシー", "個人情報"):
+        url = f"{BOT_BASE_URL}/privacy" if BOT_BASE_URL else "（URLは運営者にお問い合わせください）"
+        reply(event, f"プライバシーポリシーはこちらをご覧ください。\n{url}")
+    elif text in ("利用規約",):
+        url = f"{BOT_BASE_URL}/terms" if BOT_BASE_URL else "（URLは運営者にお問い合わせください）"
+        reply(event, f"利用規約はこちらをご覧ください。\n{url}")
     else:
         reply(
             event,
@@ -359,9 +371,45 @@ def health():
 #  管理ページ                                                          #
 # ------------------------------------------------------------------ #
 
+def _bot_info_text() -> str:
+    lines = [
+        "【このBotについて】",
+        "当別町のごみ収集日をお知らせするサービスです。",
+        "",
+        f"■ 運営者\n{BOT_OPERATOR_NAME}",
+    ]
+    if BOT_OPERATOR_EMAIL:
+        lines.append(f"■ お問い合わせ\n{BOT_OPERATOR_EMAIL}")
+    if BOT_BASE_URL:
+        lines.append(f"■ プライバシーポリシー\n{BOT_BASE_URL}/privacy")
+        lines.append(f"■ 利用規約\n{BOT_BASE_URL}/terms")
+    return "\n\n".join(lines)
+
+
 @app.get("/admin")
 def admin_page():
     return FileResponse("static/admin.html")
+
+
+@app.get("/privacy")
+def privacy_page():
+    return FileResponse("static/privacy.html")
+
+
+@app.get("/terms")
+def terms_page():
+    return FileResponse("static/terms.html")
+
+
+@app.get("/api/bot-info")
+def api_bot_info():
+    """プライバシーポリシー・利用規約ページ用の運営者情報（認証不要）"""
+    return {
+        "service_name": "当別町ごみ収集日Bot",
+        "operator_name": BOT_OPERATOR_NAME,
+        "operator_email": BOT_OPERATOR_EMAIL,
+        "base_url": BOT_BASE_URL,
+    }
 
 
 @app.get("/api/schedule")
