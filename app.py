@@ -25,12 +25,17 @@ from linebot.v3.messaging import (
     Configuration,
     MessagingApi,
     MessageAction,
+    FlexBubble,
+    FlexBox,
+    FlexImage,
+    FlexMessage,
     ImageMessage,
     PushMessageRequest,
     QuickReply,
     QuickReplyItem,
     ReplyMessageRequest,
     TextMessage,
+    URIAction,
 )
 from linebot.v3.webhooks import FollowEvent, MessageEvent, TextMessageContent
 
@@ -102,10 +107,32 @@ def _push_broadcast_to_all(broadcast: dict):
     if broadcast["type"] == "text":
         msg = TextMessage(text=broadcast["text"])
     elif broadcast["type"] == "image":
-        msg = ImageMessage(
-            original_content_url=broadcast["image_url"],
-            preview_image_url=broadcast.get("preview_url") or broadcast["image_url"],
-        )
+        link_url = broadcast.get("link_url", "").strip()
+        if link_url:
+            action = URIAction(label="開く", uri=link_url)
+            msg = FlexMessage(
+                alt_text=broadcast.get("name", "広告"),
+                contents=FlexBubble(
+                    body=FlexBox(
+                        layout="vertical",
+                        contents=[
+                            FlexImage(
+                                url=broadcast["image_url"],
+                                size="full",
+                                aspect_ratio="20:13",
+                                aspect_mode="cover",
+                                action=action,
+                            )
+                        ],
+                        padding_all="0px",
+                    )
+                ),
+            )
+        else:
+            msg = ImageMessage(
+                original_content_url=broadcast["image_url"],
+                preview_image_url=broadcast.get("preview_url") or broadcast["image_url"],
+            )
     else:
         return
 

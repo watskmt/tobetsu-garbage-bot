@@ -200,6 +200,12 @@
             <input id="bc-preview-url" type="url" placeholder="https://example.com/banner_preview.jpg"
                    class="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
           </div>
+          <div>
+            <label class="text-xs font-medium text-gray-600">タップ先（省略可）</label>
+            <input id="bc-link-url" type="text" placeholder="https://example.com　または　tel:0123456789"
+                   class="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+            <p class="mt-1 text-xs text-gray-400">URLまたは電話番号（tel:XXXXXXXX）を入力するとバナーをタップしたとき開きます</p>
+          </div>
         </div>
 
         <div class="grid grid-cols-2 gap-2">
@@ -756,6 +762,8 @@ async function createBroadcast() {
     if (!imageUrl) { alert('画像URLを入力してください'); return; }
     body.image_url  = imageUrl;
     body.preview_url = document.getElementById('bc-preview-url').value.trim() || imageUrl;
+    const linkUrl = document.getElementById('bc-link-url').value.trim();
+    if (linkUrl) body.link_url = linkUrl;
   }
 
   if (schedule !== 'monthly') {
@@ -775,6 +783,7 @@ async function createBroadcast() {
   document.getElementById('bc-text').value = '';
   document.getElementById('bc-image-url').value = '';
   document.getElementById('bc-preview-url').value = '';
+  document.getElementById('bc-link-url').value = '';
   document.getElementById('new-broadcast-form').classList.add('hidden');
   document.getElementById('form-toggle-icon').textContent = '▼';
   await loadBroadcasts();
@@ -799,10 +808,12 @@ function renderBroadcasts(list) {
 
   list.forEach(b => {
     const scheduleLabel = _scheduleLabel(b);
-    const typeLabel = b.type === 'image' ? '🖼 画像' : '💬 テキスト';
+    const typeLabel = b.type === 'image'
+      ? (b.link_url ? '🖼 画像（タップ可）' : '🖼 画像')
+      : '💬 テキスト';
     const preview = b.type === 'text'
       ? (b.text || '').slice(0, 40) + ((b.text || '').length > 40 ? '…' : '')
-      : b.image_url || '';
+      : (b.link_url ? `${b.image_url || ''} → ${b.link_url}` : b.image_url || '');
 
     const card = document.createElement('div');
     card.className = 'bg-white rounded-xl shadow-sm p-4';
