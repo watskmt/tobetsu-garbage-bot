@@ -33,6 +33,7 @@ jobs:
               rules.json \
               requirements.txt \
               static/admin.html \
+              static/test-banner.jpg \
               DEVELOPER.md \
               USER.md
 

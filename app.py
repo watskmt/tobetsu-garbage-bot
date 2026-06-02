@@ -17,6 +17,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
 from linebot.v3.messaging import (
@@ -47,6 +48,7 @@ LINE_ACCESS_TOKEN = os.environ["LINE_CHANNEL_ACCESS_TOKEN"]
 LINE_CHANNEL_SECRET = os.environ["LINE_CHANNEL_SECRET"]
 
 app = FastAPI()
+app.mount("/static", StaticFiles(directory="static"), name="static")
 config = Configuration(access_token=LINE_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 calendar = GarbageCalendar()
@@ -60,7 +62,8 @@ def _push_text(user_id: str, text: str):
         api = MessagingApi(api_client)
         api.push_message(PushMessageRequest(
             to=user_id,
-            messages=[TextMessage(text=text)],
+            messages=[TextMessage(text=text
+                                  )],
         ))
 
 
