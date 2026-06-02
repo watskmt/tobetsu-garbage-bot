@@ -307,6 +307,112 @@
   </div>
 </div>
 
+<!-- 広告編集モーダル -->
+<div id="edit-broadcast-modal" class="hidden fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50"
+     onclick="closeEditModal(event)">
+  <div class="bg-white rounded-2xl shadow-2xl w-80 max-w-full mx-4 max-h-[90vh] flex flex-col" onclick="event.stopPropagation()">
+    <div class="px-5 pt-5 pb-3 border-b border-gray-100 flex items-center justify-between">
+      <h3 class="text-sm font-bold text-gray-800">広告を編集</h3>
+      <button onclick="closeEditModal()" class="text-gray-400 hover:text-gray-600 text-lg leading-none">✕</button>
+    </div>
+    <div class="overflow-y-auto px-5 py-4 space-y-3">
+      <div>
+        <label class="text-xs font-medium text-gray-600">名前</label>
+        <input id="edit-bc-name" type="text"
+               class="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+      </div>
+
+      <div>
+        <label class="text-xs font-medium text-gray-600">種類</label>
+        <div class="mt-1 flex gap-3">
+          <label class="flex items-center gap-1.5 cursor-pointer">
+            <input type="radio" name="edit-bc-type" value="text" onchange="updateEditFields()" class="accent-blue-500">
+            <span class="text-sm text-gray-700">テキスト</span>
+          </label>
+          <label class="flex items-center gap-1.5 cursor-pointer">
+            <input type="radio" name="edit-bc-type" value="image" onchange="updateEditFields()" class="accent-blue-500">
+            <span class="text-sm text-gray-700">画像バナー</span>
+          </label>
+        </div>
+      </div>
+
+      <div id="edit-bc-text-field">
+        <label class="text-xs font-medium text-gray-600">テキスト内容</label>
+        <textarea id="edit-bc-text" rows="3"
+                  class="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"></textarea>
+      </div>
+
+      <div id="edit-bc-image-fields" class="hidden space-y-2">
+        <div>
+          <label class="text-xs font-medium text-gray-600">画像URL</label>
+          <input id="edit-bc-image-url" type="url"
+                 class="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+        </div>
+        <div>
+          <label class="text-xs font-medium text-gray-600">プレビューURL（省略可）</label>
+          <input id="edit-bc-preview-url" type="url"
+                 class="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+        </div>
+        <div>
+          <label class="text-xs font-medium text-gray-600">タップ先（省略可）</label>
+          <input id="edit-bc-link-url" type="text" placeholder="https://... または tel:..."
+                 class="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2">
+        <div>
+          <label class="text-xs font-medium text-gray-600">配信スケジュール</label>
+          <select id="edit-bc-schedule" onchange="updateEditFields()"
+                  class="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+            <option value="weekly">週１</option>
+            <option value="biweekly">隔週</option>
+            <option value="monthly">月１</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-xs font-medium text-gray-600">配信時刻</label>
+          <select id="edit-bc-hour"
+                  class="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+            <option value="6">6時</option><option value="7">7時</option><option value="8">8時</option>
+            <option value="9">9時</option><option value="10">10時</option><option value="11">11時</option>
+            <option value="12">12時</option><option value="18">18時</option><option value="19">19時</option>
+            <option value="20">20時</option><option value="21">21時</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="edit-bc-dow-field">
+        <label class="text-xs font-medium text-gray-600">曜日</label>
+        <select id="edit-bc-dow"
+                class="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+          <option value="0">月曜日</option><option value="1">火曜日</option><option value="2">水曜日</option>
+          <option value="3">木曜日</option><option value="4">金曜日</option><option value="5">土曜日</option>
+          <option value="6">日曜日</option>
+        </select>
+      </div>
+
+      <div id="edit-bc-dom-field" class="hidden">
+        <label class="text-xs font-medium text-gray-600">配信日（毎月）</label>
+        <select id="edit-bc-dom"
+                class="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+        </select>
+      </div>
+    </div>
+
+    <div class="px-5 pb-5 pt-3 border-t border-gray-100 flex gap-2">
+      <button onclick="saveEditBroadcast()"
+              class="flex-1 bg-blue-500 hover:bg-blue-600 text-white py-2.5 rounded-lg text-sm font-medium transition-colors">
+        保存
+      </button>
+      <button onclick="closeEditModal()"
+              class="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 py-2.5 rounded-lg text-sm font-medium transition-colors">
+        キャンセル
+      </button>
+    </div>
+  </div>
+</div>
+
 <!-- 編集モーダル -->
 <div id="modal" class="hidden fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50"
      onclick="closeModalBackdrop(event)">
@@ -839,6 +945,10 @@ function renderBroadcasts(list) {
                 class="flex-1 bg-green-500 hover:bg-green-600 text-white py-1.5 rounded-lg text-xs font-medium transition-colors">
           今すぐ送信
         </button>
+        <button onclick="openEditModal('${b.id}')"
+                class="px-3 bg-blue-50 hover:bg-blue-100 text-blue-600 py-1.5 rounded-lg text-xs font-medium transition-colors">
+          編集
+        </button>
         <button onclick="deleteBroadcast('${b.id}')"
                 class="px-3 bg-gray-100 hover:bg-red-100 text-gray-500 hover:text-red-600 py-1.5 rounded-lg text-xs font-medium transition-colors">
           削除
@@ -878,6 +988,113 @@ async function toggleBroadcast(bid, enabled) {
 async function deleteBroadcast(bid) {
   if (!confirm('このスケジュールを削除しますか？')) return;
   await authFetch(`/api/broadcasts/${bid}`, { method: 'DELETE' });
+  await loadBroadcasts();
+}
+
+// ------------------------------------------------------------------ //
+//  広告編集モーダル                                                    //
+// ------------------------------------------------------------------ //
+let _editingBid = null;
+
+(function() {
+  const sel = document.getElementById('edit-bc-dom');
+  if (sel && sel.children.length === 0) {
+    for (let i = 1; i <= 28; i++) {
+      const o = document.createElement('option');
+      o.value = i; o.textContent = `${i}日`;
+      sel.appendChild(o);
+    }
+  }
+})();
+
+function updateEditFields() {
+  const type     = document.querySelector('input[name="edit-bc-type"]:checked')?.value || 'text';
+  const schedule = document.getElementById('edit-bc-schedule').value;
+  document.getElementById('edit-bc-text-field').classList.toggle('hidden', type !== 'text');
+  document.getElementById('edit-bc-image-fields').classList.toggle('hidden', type !== 'image');
+  document.getElementById('edit-bc-dow-field').classList.toggle('hidden', schedule === 'monthly');
+  document.getElementById('edit-bc-dom-field').classList.toggle('hidden', schedule !== 'monthly');
+}
+
+async function openEditModal(bid) {
+  const res = await authFetch(`/api/broadcasts`);
+  const list = await res.json();
+  const b = list.find(x => x.id === bid);
+  if (!b) return;
+  _editingBid = bid;
+
+  document.getElementById('edit-bc-name').value = b.name || '';
+
+  // 種類
+  const typeRadio = document.querySelector(`input[name="edit-bc-type"][value="${b.type}"]`);
+  if (typeRadio) typeRadio.checked = true;
+
+  // テキスト
+  document.getElementById('edit-bc-text').value = b.text || '';
+
+  // 画像
+  document.getElementById('edit-bc-image-url').value = b.image_url || '';
+  document.getElementById('edit-bc-preview-url').value = b.preview_url || '';
+  document.getElementById('edit-bc-link-url').value = b.link_url || '';
+
+  // スケジュール
+  document.getElementById('edit-bc-schedule').value = b.schedule || 'weekly';
+  document.getElementById('edit-bc-hour').value = String(b.hour ?? 9);
+  document.getElementById('edit-bc-dow').value = String(b.day_of_week ?? 0);
+  document.getElementById('edit-bc-dom').value = String(b.day_of_month ?? 1);
+
+  updateEditFields();
+  document.getElementById('edit-broadcast-modal').classList.remove('hidden');
+}
+
+function closeEditModal(event) {
+  if (event && event.target !== document.getElementById('edit-broadcast-modal')) return;
+  document.getElementById('edit-broadcast-modal').classList.add('hidden');
+  _editingBid = null;
+}
+
+async function saveEditBroadcast() {
+  if (!_editingBid) return;
+  const name = document.getElementById('edit-bc-name').value.trim();
+  const type = document.querySelector('input[name="edit-bc-type"]:checked')?.value || 'text';
+  const schedule = document.getElementById('edit-bc-schedule').value;
+  const hour = parseInt(document.getElementById('edit-bc-hour').value);
+
+  if (!name) { alert('名前を入力してください'); return; }
+
+  const body = { name, type, schedule, hour };
+
+  if (type === 'text') {
+    const text = document.getElementById('edit-bc-text').value.trim();
+    if (!text) { alert('テキスト内容を入力してください'); return; }
+    body.text = text;
+    body.image_url = null; body.preview_url = null; body.link_url = null;
+  } else {
+    const imageUrl = document.getElementById('edit-bc-image-url').value.trim();
+    if (!imageUrl) { alert('画像URLを入力してください'); return; }
+    body.image_url = imageUrl;
+    body.preview_url = document.getElementById('edit-bc-preview-url').value.trim() || imageUrl;
+    const linkUrl = document.getElementById('edit-bc-link-url').value.trim();
+    body.link_url = linkUrl || null;
+    body.text = null;
+  }
+
+  if (schedule !== 'monthly') {
+    body.day_of_week = parseInt(document.getElementById('edit-bc-dow').value);
+    body.day_of_month = null;
+  } else {
+    body.day_of_month = parseInt(document.getElementById('edit-bc-dom').value);
+    body.day_of_week = null;
+  }
+
+  const res = await authFetch(`/api/broadcasts/${_editingBid}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) { alert('保存に失敗しました'); return; }
+
+  document.getElementById('edit-broadcast-modal').classList.add('hidden');
+  _editingBid = null;
   await loadBroadcasts();
 }
 </script>
