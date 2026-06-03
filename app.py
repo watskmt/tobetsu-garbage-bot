@@ -196,14 +196,22 @@ for _b in broadcast_store.list_broadcasts():
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 _ADMIN_SECRET  = os.environ.get("ADMIN_SECRET_KEY") or secrets.token_hex(32)
 
+if not ADMIN_PASSWORD:
+    logger.warning("ADMIN_PASSWORD が設定されていません。管理画面へのログインは無効化されます。")
+
 BOT_OPERATOR_NAME  = os.environ.get("BOT_OPERATOR_NAME", "当別町ごみ収集日Bot運営者")
 BOT_OPERATOR_EMAIL = os.environ.get("BOT_OPERATOR_EMAIL", "")
 BOT_BASE_URL       = os.environ.get("BOT_BASE_URL", "")
 
 
+_login_attempts = {}
+
+
 def _admin_token() -> str:
-    """サーバー秘密鍵から管理者トークンを生成（決定論的HMAC）"""
-    return hmac.new(_ADMIN_SECRET.encode(), b"admin-session", hashlib.sha256).hexdigest()
+    """サーバー秘密鍵から管理者トークンを生成（決定論的HMAC、日替わり）"""
+    today_str = date.today().isoformat()
+    msg = f"admin-session-{today_str}".encode()
+    return hmac.new(_ADMIN_SECRET.encode(), msg, hashlib.sha256).hexdigest()
 
 
 def require_admin(authorization: Optional[str] = Header(None)):
@@ -225,10 +233,26 @@ def admin_check(authorization: Optional[str] = Header(None)):
 @app.post("/admin/login")
 async def admin_login(request: Request):
     """パスワード検証 → トークン発行"""
+    # 簡易レートリミット（1時間に30回までの失敗を許容）
+    client_ip = request.client.host if request.client else "unknown"
+    now = datetime.now()
+    attempts = _login_attempts.get(client_ip, [])
+    recent_attempts = [a for a in attempts if now - a < timedelta(hours=1)]
+    if len(recent_attempts) >= 30:
+        raise HTTPException(status_code=429, detail="リクエストが多すぎます。しばらく時間をおいてください。")
+
+    if not ADMIN_PASSWORD:
+        raise HTTPException(status_code=503, detail="管理画面は現在無効です")
+
     body = await request.json()
     password = body.get("password", "")
     if not hmac.compare_digest(password, ADMIN_PASSWORD):
+        recent_attempts.append(now)
+        _login_attempts[client_ip] = recent_attempts
         raise HTTPException(status_code=401, detail="パスワードが違います")
+
+    # 成功時はカウントリセット
+    _login_attempts.pop(client_ip, None)
     return {"token": _admin_token()}
 
 
