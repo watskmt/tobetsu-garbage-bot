@@ -36,6 +36,7 @@ jobs:
               static/test-banner.jpg \
               DEVELOPER.md \
               USER.md
+            # static/privacy.html・static/terms.html はサーバー側で差し替え可能なため除外
 
             # 依存パッケージ更新（変更があった場合のみ実際にインストールされる）
             source venv/bin/activate

@@ -16,7 +16,7 @@ import jpholiday
 from apscheduler.schedulers.background import BackgroundScheduler
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
@@ -575,3 +575,54 @@ async def api_patch_broadcast(bid: str, request: Request, _=Depends(require_admi
     else:
         _remove_broadcast_job(bid)
     return b
+
+
+# ------------------------------------------------------------------ #
+#  文書管理 API（プライバシーポリシー・利用規約）                        #
+# ------------------------------------------------------------------ #
+
+_DOCS: dict[str, str] = {
+    "privacy": "static/privacy.html",
+    "terms":   "static/terms.html",
+}
+_DOC_LABELS: dict[str, str] = {
+    "privacy": "プライバシーポリシー",
+    "terms":   "利用規約",
+}
+
+
+@app.get("/api/docs")
+def api_list_docs(_=Depends(require_admin)):
+    result = []
+    for name, path in _DOCS.items():
+        p = Path(path)
+        if p.exists():
+            stat = p.stat()
+            result.append({
+                "name":     name,
+                "label":    _DOC_LABELS[name],
+                "size":     stat.st_size,
+                "modified": datetime.fromtimestamp(stat.st_mtime, tz=JST).isoformat(),
+            })
+    return result
+
+
+@app.get("/api/docs/{name}")
+def api_get_doc(name: str, _=Depends(require_admin)):
+    if name not in _DOCS:
+        raise HTTPException(status_code=404, detail="not found")
+    p = Path(_DOCS[name])
+    if not p.exists():
+        raise HTTPException(status_code=404, detail="file not found")
+    return Response(content=p.read_bytes(), media_type="text/html; charset=utf-8")
+
+
+@app.put("/api/docs/{name}")
+async def api_replace_doc(name: str, request: Request, _=Depends(require_admin)):
+    if name not in _DOCS:
+        raise HTTPException(status_code=404, detail="not found")
+    body = await request.body()
+    if len(body) > 500_000:
+        raise HTTPException(status_code=413, detail="ファイルが大きすぎます（上限500KB）")
+    Path(_DOCS[name]).write_bytes(body)
+    return {"ok": True}
