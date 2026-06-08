@@ -54,6 +54,16 @@ def get_notify_time(user_id: str) -> str | None:
     return entry.get("notify_time") if entry else None
 
 
+def delete_user(user_id: str) -> bool:
+    with _lock:
+        data = _load()
+        if user_id not in data:
+            return False
+        del data[user_id]
+        _save(data)
+    return True
+
+
 def get_users_to_notify(hhmm: str) -> list[dict]:
     """指定の HH:MM に通知が設定されているユーザー一覧を返す。"""
     data = _load()
