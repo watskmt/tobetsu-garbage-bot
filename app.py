@@ -37,7 +37,7 @@ from linebot.v3.messaging import (
     TextMessage,
     URIAction,
 )
-from linebot.v3.webhooks import FollowEvent, MessageEvent, TextMessageContent
+from linebot.v3.webhooks import FollowEvent, MessageEvent, TextMessageContent, UnfollowEvent
 
 import broadcast_store
 import user_store
@@ -329,6 +329,11 @@ def handle_follow(event):
         "当別町ごみ収集日Botへようこそ！\n\n" + DISTRICT_GUIDE,
         quick_reply=DISTRICT_QUICK_REPLY,
     )
+
+
+@handler.add(UnfollowEvent)
+def handle_unfollow(event):
+    user_store.delete_user(event.source.user_id)
 
 
 @handler.add(MessageEvent, message=TextMessageContent)

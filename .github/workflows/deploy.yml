@@ -1,10 +1,10 @@
-name: Deploy to EC2
+name: Deploy to Fly.io
 
 on:
   push:
     branches:
       - master
-  workflow_dispatch:  # 手動実行ボタン
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -12,43 +12,11 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - name: Deploy to EC2
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USERNAME }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            set -e
-            cd /home/ec2-user/tobetsu-garbage-bot
+      - uses: actions/checkout@v4
 
-            # コードファイルのみ更新
-            # corrections.json・users.json はサーバー側の状態を保持する
-            git fetch origin master
-            git checkout origin/master -- \
-              app.py \
-              broadcast_store.py \
-              calendar_parser.py \
-              user_store.py \
-              rules.json \
-              requirements.txt \
-              static/admin.html \
-              static/test-banner.jpg \
-              DEVELOPER.md \
-              USER.md
-            # static/privacy.html・static/terms.html はサーバー側で差し替え可能なため除外
+      - uses: superfly/flyctl-actions/setup-flyctl@master
 
-            # 依存パッケージ更新（変更があった場合のみ実際にインストールされる）
-            source venv/bin/activate
-            pip install -r requirements.txt -q
-
-            # サービス再起動
-            sudo systemctl restart tobetsu-bot
-
-            # 起動確認（3秒待って状態チェック）
-            sleep 3
-            sudo systemctl is-active --quiet tobetsu-bot \
-              && echo "✅ デプロイ成功: $(date '+%Y-%m-%d %H:%M:%S JST')" \
-              || (echo "❌ サービス起動失敗" \
-                  && sudo journalctl -u tobetsu-bot -n 30 --no-pager \
-                  && exit 1)
+      - name: Deploy
+        run: flyctl deploy --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
