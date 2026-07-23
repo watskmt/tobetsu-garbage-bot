@@ -1,0 +1,14 @@
+[
+  {
+    "name": "テスト広告バナー",
+    "type": "image",
+    "image_url": "https://tobetsu-garbage-bot.fly.dev/static/test-banner.jpg",
+    "preview_url": "https://tobetsu-garbage-bot.fly.dev/static/test-banner.jpg",
+    "schedule": "weekly",
+    "day_of_week": 1,
+    "hour": 9,
+    "enabled": true,
+    "id": "fe1714c0",
+    "created_at": "2026-06-02T22:15:26.781756+09:00"
+  }
+]
