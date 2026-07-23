@@ -471,6 +471,13 @@ def api_bot_info():
     }
 
 
+@app.get("/api/users")
+def api_list_users(_=Depends(require_admin)):
+    """登録済みユーザー一覧（管理画面表示用）"""
+    users = user_store.get_all_users()
+    return {"count": len(users), "users": users}
+
+
 @app.get("/api/schedule")
 def api_schedule(district: int, year: int, month: int, _=Depends(require_admin)):
     # リクエストされた年度が未生成なら自動補完

@@ -64,6 +64,19 @@ def delete_user(user_id: str) -> bool:
     return True
 
 
+def get_all_users() -> list[dict]:
+    """登録済みユーザー一覧を返す（管理画面表示用）。"""
+    data = _load()
+    result = []
+    for uid, entry in data.items():
+        result.append({
+            "user_id": uid,
+            "district": entry.get("district"),
+            "notify_time": entry.get("notify_time"),
+        })
+    return result
+
+
 def get_users_to_notify(hhmm: str) -> list[dict]:
     """指定の HH:MM に通知が設定されているユーザー一覧を返す。"""
     data = _load()
