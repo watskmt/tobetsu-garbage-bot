@@ -12,7 +12,7 @@
   <div class="mb-6">
     <p class="text-xs text-gray-400 mb-1">当別町ごみ収集日Bot</p>
     <h1 class="text-2xl font-bold text-gray-900">利用規約</h1>
-    <p id="updated-date" class="text-xs text-gray-400 mt-1"></p>
+    <p class="text-xs text-gray-400 mt-1">制定日: 2025年5月30日 ／ 最終改定日: 2026年7月23日</p>
   </div>
 
   <div class="space-y-6 text-sm leading-relaxed">
@@ -20,8 +20,9 @@
     <section>
       <p>
         本利用規約（以下「本規約」）は、<strong id="operator-name">当別町ごみ収集日Bot運営者</strong>（以下「運営者」）が提供する
-        LINEBot「当別町ごみ収集日Bot」（以下「本サービス」）の利用条件を定めるものです。
+        LINE Bot「当別町ごみ収集日Bot」（以下「本サービス」）の利用条件を定めるものです。
         本サービスをご利用になった場合、本規約に同意したものとみなします。
+        なお、本サービスは北海道当別町のごみ収集日をお知らせする非公式のサービスであり、当別町および LINE ヤフー株式会社とは関係ありません。
       </p>
     </section>
 
@@ -38,7 +39,7 @@
       <h2 class="font-bold text-base text-gray-900 mb-2">2. 利用条件</h2>
       <ul class="list-disc list-inside space-y-1 text-gray-700">
         <li>本サービスはLINEアカウントを持つ方であればどなたでも無料でご利用いただけます。</li>
-        <li>LINEの利用規約を遵守してください。</li>
+        <li>LINE ヤフー株式会社の定める利用規約を遵守してください。</li>
         <li>個人の利用を目的とし、商業目的での利用はお断りします。</li>
       </ul>
     </section>
@@ -100,19 +101,19 @@ async function loadInfo() {
   try {
     const res = await fetch('/api/bot-info');
     const info = await res.json();
-    document.getElementById('operator-name').textContent = info.operator_name;
-    document.querySelectorAll('.operator-name-ref').forEach(el => el.textContent = info.operator_name);
+    if (info.operator_name) {
+      document.getElementById('operator-name').textContent = info.operator_name;
+      document.querySelectorAll('.operator-name-ref').forEach(el => el.textContent = info.operator_name);
+    }
 
     const contact = document.getElementById('contact-info');
-    contact.innerHTML = `<p class="font-medium mb-1">${info.operator_name}</p>` +
-      (info.operator_email ? `<p>メール: <a href="mailto:${info.operator_email}" class="text-blue-500">${info.operator_email}</a></p>` : '');
+    contact.innerHTML = `<p class="font-medium mb-1">${info.operator_name || '当別町ごみ収集日Bot運営者'}</p>` +
+      (info.operator_email
+        ? `<p>メール: <a href="mailto:${info.operator_email}" class="text-blue-500">${info.operator_email}</a></p>`
+        : `<p class="text-gray-500">お問い合わせは本サービスの LINE トーク画面よりご連絡ください。</p>`);
   } catch(e) {}
 
   document.getElementById('copyright-year').textContent = new Date().getFullYear();
-
-  const d = new Date();
-  document.getElementById('updated-date').textContent =
-    `最終更新: ${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
 }
 loadInfo();
 </script>
