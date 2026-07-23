@@ -202,6 +202,7 @@ if not ADMIN_PASSWORD:
 BOT_OPERATOR_NAME  = os.environ.get("BOT_OPERATOR_NAME", "当別町ごみ収集日Bot運営者")
 BOT_OPERATOR_EMAIL = os.environ.get("BOT_OPERATOR_EMAIL", "")
 BOT_BASE_URL       = os.environ.get("BOT_BASE_URL", "")
+GARBAGE_INFO_URL   = os.environ.get("GARBAGE_INFO_URL", "https://www.town.tobetsu.hokkaido.jp/soshiki/kankyo/15050.html")
 
 
 _login_attempts = {}
@@ -261,7 +262,29 @@ MAIN_QUICK_REPLY = QuickReply(items=[
     QuickReplyItem(action=MessageAction(label="明日", text="明日")),
     QuickReplyItem(action=MessageAction(label="１週間", text="１週間")),
     QuickReplyItem(action=MessageAction(label="今月", text="今月")),
+    QuickReplyItem(action=MessageAction(label="ヘルプ", text="ヘルプ")),
 ])
+
+def _help_text() -> str:
+    return (
+        "📋 使い方ガイド\n"
+        "\n"
+        "【収集日の確認】\n"
+        "・今日 → 今日の収集ごみ\n"
+        "・明日 → 明日の収集ごみ\n"
+        "・今週 → 今後7日間の収集予定\n"
+        "・今月 → 今月の収集予定\n"
+        "\n"
+        "【設定】\n"
+        "・地区変更 → 地区を変更する\n"
+        "・通知設定 → 毎朝の通知時刻を設定\n"
+        "・通知オフ → 毎朝の通知を停止\n"
+        + (f"\n【ごみの出し方】\n{GARBAGE_INFO_URL}\n" if GARBAGE_INFO_URL else "")
+        + "\n【その他】\n"
+        "・このBotについて → 運営情報\n"
+        "・プライバシーポリシー\n"
+        "・利用規約"
+    )
 
 DISTRICT_QUICK_REPLY = QuickReply(items=[
     QuickReplyItem(action=MessageAction(label="1地区", text="地区1")),
@@ -405,7 +428,9 @@ def handle_message(event):
         calendar.clear_cache()
         calendar.reload()
         reply(event, "カレンダーデータを再取得しました。")
-    elif text in ("このBotについて", "このbotについて", "運営情報", "運営者", "Bot情報", "bot情報", "ヘルプ", "help"):
+    elif text in ("ヘルプ", "help", "？", "?", "使い方", "メニュー"):
+        reply(event, _help_text())
+    elif text in ("このBotについて", "このbotについて", "運営情報", "運営者", "Bot情報", "bot情報"):
         reply(event, _bot_info_text(), quick_reply=MAIN_QUICK_REPLY)
     elif text in ("プライバシーポリシー", "プライバシー", "個人情報"):
         url = f"{BOT_BASE_URL}/privacy" if BOT_BASE_URL else "（URLは運営者にお問い合わせください）"
@@ -414,10 +439,7 @@ def handle_message(event):
         url = f"{BOT_BASE_URL}/terms" if BOT_BASE_URL else "（URLは運営者にお問い合わせください）"
         reply(event, f"利用規約はこちらをご覧ください。\n{url}")
     else:
-        reply(
-            event,
-            "「今日」「明日」「今週」でごみ収集日を確認できます。\n地区変更は「地区変更」、通知設定は「通知設定」と送ってください。",
-        )
+        reply(event, _help_text())
 
 
 @app.get("/")
