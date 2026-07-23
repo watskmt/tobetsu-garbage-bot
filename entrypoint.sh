@@ -5,7 +5,7 @@ DATA_DIR="/data"
 APP_DIR="/app"
 
 # ボリュームに初期データをコピー（初回起動時のみ）
-for f in users.json broadcasts.json corrections.json rules.json; do
+for f in users.json broadcasts.json corrections.json rules.json clicks.json; do
   if [ ! -f "$DATA_DIR/$f" ]; then
     if [ -f "$APP_DIR/$f" ]; then
       cp "$APP_DIR/$f" "$DATA_DIR/$f"
@@ -27,6 +27,7 @@ done
 ln -sf "$DATA_DIR/users.json"           "$APP_DIR/users.json"
 ln -sf "$DATA_DIR/broadcasts.json"      "$APP_DIR/broadcasts.json"
 ln -sf "$DATA_DIR/corrections.json"     "$APP_DIR/corrections.json"
+ln -sf "$DATA_DIR/clicks.json"          "$APP_DIR/clicks.json"
 ln -sf "$DATA_DIR/static/privacy.html"  "$APP_DIR/static/privacy.html"
 ln -sf "$DATA_DIR/static/terms.html"    "$APP_DIR/static/terms.html"
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import calendar as cal_module
 import hashlib
 import hmac
+import html
 import json
 import logging
 import os
@@ -16,7 +17,7 @@ import jpholiday
 from apscheduler.schedulers.background import BackgroundScheduler
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
@@ -40,6 +41,7 @@ from linebot.v3.messaging import (
 from linebot.v3.webhooks import FollowEvent, MessageEvent, TextMessageContent, UnfollowEvent
 
 import broadcast_store
+import click_store
 import user_store
 from calendar_parser import GarbageCalendar, DISTRICT_NAMES
 
@@ -109,7 +111,10 @@ def _push_broadcast_to_all(broadcast: dict):
     elif broadcast["type"] == "image":
         link_url = broadcast.get("link_url", "").strip()
         if link_url:
-            action = URIAction(label="開く", uri=link_url)
+            bid = broadcast.get("id", "")
+            # 計測のため、遷移先を自サーバーの /c/{id} に差し替える（BOT_BASE_URL 設定時のみ）
+            tap_uri = f"{BOT_BASE_URL}/c/{bid}" if (BOT_BASE_URL and bid) else link_url
+            action = URIAction(label="開く", uri=tap_uri)
             msg = FlexMessage(
                 alt_text=broadcast.get("name", "広告"),
                 contents=FlexBubble(
@@ -137,13 +142,19 @@ def _push_broadcast_to_all(broadcast: dict):
         return
 
     users = user_store._load()
+    sent = 0
     with ApiClient(config) as api_client:
         api = MessagingApi(api_client)
         for uid in users:
             try:
                 api.push_message(PushMessageRequest(to=uid, messages=[msg]))
+                sent += 1
             except Exception as e:
                 logger.error("broadcast push failed user=%s: %s", uid, e)
+
+    # 送信到達数（インプレッション）を記録
+    if broadcast.get("id") and broadcast.get("type") == "image" and broadcast.get("link_url"):
+        click_store.record_impressions(broadcast["id"], sent)
 
 
 def _add_broadcast_job(broadcast: dict):
@@ -482,6 +493,65 @@ def terms_page():
     return FileResponse("static/terms.html")
 
 
+# ------------------------------------------------------------------ #
+#  広告バナーのクリック計測（認証不要）                                  #
+# ------------------------------------------------------------------ #
+
+@app.get("/c/{bid}")
+def track_click(bid: str):
+    """バナータップの計測。URLならリダイレクト、tel:なら中間ページを表示する。"""
+    b = broadcast_store.get_broadcast(bid)
+    link_url = (b or {}).get("link_url", "").strip()
+    if not link_url:
+        # 対象が消えている場合はトップへ
+        return RedirectResponse(url="/", status_code=302)
+
+    click_store.record_click(bid)
+
+    if link_url.lower().startswith("tel:"):
+        return HTMLResponse(content=_call_interstitial(bid, link_url))
+
+    return RedirectResponse(url=link_url, status_code=302)
+
+
+@app.post("/c/{bid}/call")
+def track_call(bid: str):
+    """中間ページの「電話する」タップ（発信意図）を計測する。"""
+    click_store.record_call(bid)
+    return Response(status_code=204)
+
+
+def _call_interstitial(bid: str, tel_url: str) -> str:
+    number = tel_url[4:].strip()
+    safe_num = html.escape(number)
+    safe_bid = html.escape(bid)
+    return f"""<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>お電話でのお問い合わせ</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 text-gray-800">
+<div class="max-w-sm mx-auto px-6 py-16 text-center">
+  <p class="text-sm text-gray-500 mb-2">お電話でのお問い合わせ</p>
+  <p class="text-3xl font-bold text-gray-900 mb-8 tracking-wide">{safe_num}</p>
+  <a id="call-btn" href="tel:{safe_num}"
+     class="block w-full py-4 bg-green-500 hover:bg-green-600 text-white rounded-xl text-lg font-bold shadow">
+    📞 電話する
+  </a>
+  <p class="text-xs text-gray-400 mt-6">ボタンを押すと電話アプリが起動します</p>
+</div>
+<script>
+  document.getElementById('call-btn').addEventListener('click', function() {{
+    try {{ navigator.sendBeacon('/c/{safe_bid}/call'); }} catch (e) {{}}
+  }});
+</script>
+</body>
+</html>"""
+
+
 @app.get("/api/bot-info")
 def api_bot_info():
     """プライバシーポリシー・利用規約ページ用の運営者情報（認証不要）"""
@@ -565,7 +635,11 @@ def _load_corrections_raw() -> dict:
 
 @app.get("/api/broadcasts")
 def api_list_broadcasts(_=Depends(require_admin)):
-    return broadcast_store.list_broadcasts()
+    stats = click_store.all_stats()
+    broadcasts = broadcast_store.list_broadcasts()
+    for b in broadcasts:
+        b["stats"] = stats.get(b["id"], {"impressions": 0, "clicks": 0, "calls": 0, "last_click": None})
+    return broadcasts
 
 
 @app.post("/api/broadcasts")

@@ -945,6 +945,23 @@ function renderBroadcasts(list) {
       ? (b.text || '').slice(0, 40) + ((b.text || '').length > 40 ? '…' : '')
       : (b.link_url ? `${b.image_url || ''} → ${b.link_url}` : b.image_url || '');
 
+    let statsHtml = '';
+    if (b.type === 'image' && b.link_url) {
+      const st  = b.stats || { impressions: 0, clicks: 0, calls: 0 };
+      const imp = st.impressions || 0;
+      const clk = st.clicks || 0;
+      const ctr = imp > 0 ? ((clk / imp) * 100).toFixed(1) + '%' : '—';
+      const isTel = b.link_url.toLowerCase().startsWith('tel:');
+      const clickLabel = isTel ? 'タップ' : 'クリック';
+      statsHtml = `
+        <div class="grid ${isTel ? 'grid-cols-4' : 'grid-cols-3'} gap-2 mt-2 bg-gray-50 rounded-lg px-3 py-2 text-center">
+          <div><div class="text-sm font-bold text-gray-800">${imp}</div><div class="text-[10px] text-gray-400">送信</div></div>
+          <div><div class="text-sm font-bold text-blue-600">${clk}</div><div class="text-[10px] text-gray-400">${clickLabel}</div></div>
+          ${isTel ? `<div><div class="text-sm font-bold text-green-600">${st.calls || 0}</div><div class="text-[10px] text-gray-400">発信</div></div>` : ''}
+          <div><div class="text-sm font-bold text-gray-800">${ctr}</div><div class="text-[10px] text-gray-400">CTR</div></div>
+        </div>`;
+    }
+
     const card = document.createElement('div');
     card.className = 'bg-white rounded-xl shadow-sm p-4';
     card.innerHTML = `
@@ -964,6 +981,7 @@ function renderBroadcasts(list) {
           </div>
         </label>
       </div>
+      ${statsHtml}
       <div class="flex gap-2 mt-2">
         <button onclick="sendBroadcastNow('${b.id}')"
                 class="flex-1 bg-green-500 hover:bg-green-600 text-white py-1.5 rounded-lg text-xs font-medium transition-colors">
