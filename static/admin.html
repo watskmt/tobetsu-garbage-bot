@@ -117,6 +117,7 @@
     <button id="btn-year"      onclick="setView('year')"      class="flex-1 py-1.5 rounded-lg text-sm font-medium">🗓 年間</button>
     <button id="btn-broadcast" onclick="setView('broadcast')" class="flex-1 py-1.5 rounded-lg text-sm font-medium">📢 広告</button>
     <button id="btn-docs"      onclick="setView('docs')"      class="flex-1 py-1.5 rounded-lg text-sm font-medium">📄 文書</button>
+    <button id="btn-users"     onclick="setView('users')"     class="flex-1 py-1.5 rounded-lg text-sm font-medium">👥 ユーザー</button>
   </div>
 
   <!-- ===== 月表示 ===== -->
@@ -276,6 +277,16 @@
   <!-- ===== 文書管理 ===== -->
   <div id="docs-view" class="hidden space-y-3">
     <div id="docs-list" class="space-y-3"></div>
+  </div>
+
+  <!-- ===== ユーザー一覧 ===== -->
+  <div id="users-view" class="hidden space-y-3">
+    <div class="flex items-center justify-between bg-white rounded-xl px-4 py-2.5 shadow-sm">
+      <span class="text-sm font-semibold text-gray-700">登録ユーザー <span id="users-count" class="text-blue-500">0</span> 人</span>
+      <button onclick="loadUsers()" class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg text-xs font-medium">🔄 更新</button>
+    </div>
+    <div id="users-list" class="space-y-2"></div>
+    <p id="users-empty" class="text-center text-gray-400 text-sm py-6 hidden">登録されたユーザーはいません</p>
   </div>
 
   <!-- 凡例 -->
@@ -518,8 +529,9 @@ function setView(v) {
   document.getElementById('year-view').classList.toggle('hidden',  v !== 'year');
   document.getElementById('broadcast-view').classList.toggle('hidden', v !== 'broadcast');
   document.getElementById('docs-view').classList.toggle('hidden', v !== 'docs');
+  document.getElementById('users-view').classList.toggle('hidden', v !== 'users');
   // 地区タブはカレンダービューのみ表示
-  const hideDistrict = v === 'broadcast' || v === 'docs';
+  const hideDistrict = v === 'broadcast' || v === 'docs' || v === 'users';
   document.querySelectorAll('[id^="tab-"]').forEach(el => el.parentElement.classList.toggle('hidden', hideDistrict));
   const act = 'flex-1 py-1.5 rounded-lg text-sm font-medium bg-blue-500 text-white';
   const def = 'flex-1 py-1.5 rounded-lg text-sm font-medium bg-white text-gray-600 hover:bg-gray-100';
@@ -527,6 +539,7 @@ function setView(v) {
   document.getElementById('btn-year').className      = v === 'year'      ? act : def;
   document.getElementById('btn-broadcast').className = v === 'broadcast' ? act : def;
   document.getElementById('btn-docs').className      = v === 'docs'      ? act : def;
+  document.getElementById('btn-users').className     = v === 'users'     ? act : def;
   if (v === 'year') {
     const currentFY = month >= 4 ? year : year - 1;
     fyOffset = currentFY - baseFiscalYear();
@@ -534,6 +547,7 @@ function setView(v) {
   }
   if (v === 'broadcast') loadBroadcasts();
   if (v === 'docs') loadDocs();
+  if (v === 'users') loadUsers();
 }
 
 // ------------------------------------------------------------------ //
@@ -1186,6 +1200,52 @@ async function replaceDoc(name) {
     await loadDocs();
   } else {
     alert('差し替えに失敗しました');
+  }
+}
+
+// ------------------------------------------------------------------ //
+//  ユーザー一覧                                                        //
+// ------------------------------------------------------------------ //
+async function loadUsers() {
+  const list  = document.getElementById('users-list');
+  const empty = document.getElementById('users-empty');
+  const res = await authFetch('/api/users');
+  if (!res.ok) { alert('ユーザー一覧の取得に失敗しました'); return; }
+  const data = await res.json();
+  const users = data.users || [];
+  document.getElementById('users-count').textContent = data.count ?? users.length;
+  list.innerHTML = '';
+  empty.classList.toggle('hidden', users.length > 0);
+
+  users.forEach((u, i) => {
+    const district = u.district ? `${u.district}地区` : '<span class="text-gray-400">未設定</span>';
+    const notify   = u.notify_time
+      ? `🔔 ${escHtml(u.notify_time)}`
+      : '<span class="text-gray-400">通知オフ</span>';
+    const row = document.createElement('div');
+    row.className = 'bg-white rounded-xl px-4 py-3 shadow-sm flex items-center gap-3';
+    row.innerHTML = `
+      <span class="text-xs text-gray-400 w-6 flex-shrink-0 text-right">${i + 1}</span>
+      <div class="min-w-0 flex-1">
+        <div class="font-mono text-xs text-gray-700 truncate" title="${escHtml(u.user_id)}">${escHtml(u.user_id)}</div>
+        <div class="text-xs text-gray-500 mt-0.5 flex gap-3">
+          <span>${district}</span>
+          <span>${notify}</span>
+        </div>
+      </div>
+      <button onclick="copyUserId('${escHtml(u.user_id)}')"
+              class="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-500 rounded-lg text-xs font-medium flex-shrink-0">コピー</button>
+    `;
+    list.appendChild(row);
+  });
+}
+
+async function copyUserId(id) {
+  try {
+    await navigator.clipboard.writeText(id);
+    alert('IDをコピーしました');
+  } catch {
+    prompt('コピーしてください', id);
   }
 }
 </script>
