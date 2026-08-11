@@ -15,11 +15,13 @@ for f in users.json broadcasts.json corrections.json rules.json clicks.json; do
   fi
 done
 
-# staticファイル（管理者がアップロード可能なもの）
+# staticファイル（イメージ同梱分をボリュームへ初期配置）
 mkdir -p "$DATA_DIR/static"
-for f in privacy.html terms.html; do
+for src in "$APP_DIR"/static/*; do
+  [ -f "$src" ] || continue
+  f=$(basename "$src")
   if [ ! -f "$DATA_DIR/static/$f" ]; then
-    cp "$APP_DIR/static/$f" "$DATA_DIR/static/$f" 2>/dev/null || true
+    cp "$src" "$DATA_DIR/static/$f" 2>/dev/null || true
   fi
 done
 
