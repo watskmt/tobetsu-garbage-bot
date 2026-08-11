@@ -36,18 +36,21 @@ def generate_banner():
 
     font_path = ensure_font()
     title_font = load_font(font_path, 76)
+    sub_font = load_font(font_path, 40, "Medium")
     label_font = load_font(font_path, 38, "Medium")
     btn_font = load_font(font_path, 44)
 
     img = Image.new("RGB", (width, height), color=bg_color)
     draw = ImageDraw.Draw(img)
 
-    draw.text((width // 2, 200), "当別町 ごみ収集ボット",
+    draw.text((width // 2, 175), "当別町 ごみ収集ボット",
               font=title_font, fill=text_color, anchor="mm")
-    draw.text((width // 2, 285), "【 非公式 】",
+    draw.text((width // 2, 255), "毎日のごみ出し情報をLINEでお届け",
+              font=sub_font, fill=text_color, anchor="mm")
+    draw.text((width // 2, 325), "【 非公式 】",
               font=label_font, fill=text_color, anchor="mm")
 
-    btn_text = "友だち追加はこちら"
+    btn_text = "友だち追加で無料でご利用"
     bbox = draw.textbbox((0, 0), btn_text, font=btn_font)
     btn_w = bbox[2] - bbox[0] + 90
     btn_h = 100
