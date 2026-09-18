@@ -8,3 +8,4 @@ ignore = ["E501", "B008"]  # B008: FastAPI の Depends() は引数デフォル�
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]   # CI の `pytest -q` でもリポジトリ直下のモジュールを import できるように
