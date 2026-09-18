@@ -2,10 +2,8 @@ fastapi>=0.100.0
 aiofiles>=23.1.0
 uvicorn>=0.22.0
 line-bot-sdk>=3.5.0
-pdf2image>=1.16.0
-Pillow>=10.0.0
-anthropic>=0.25.0
-requests>=2.31.0
 python-dotenv>=1.0.0
 jpholiday>=0.1.8
 APScheduler>=3.10.0
+# generate_banner.py（開発用スクリプト）でのみ使用
+Pillow>=10.0.0

@@ -1,5 +1,10 @@
 {
   "_comment": "曜日: 0=月 1=火 2=水 3=木 4=金 5=土 6=日 / nth: 第N週（省略=毎週）",
+  "_holidays_comment": "skip_on_national_holidays: true にすると祝日（jpholiday）は収集なしになる。closed_periods は年末年始など毎年固定の休止期間（MM-DD、年跨ぎ可）。町の方針を確認してから有効化すること。",
+  "holidays": {
+    "skip_on_national_holidays": false,
+    "closed_periods": []
+  },
 
   "3": {
     "weekday_rules": [
