@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import json
 import uuid
-from datetime import datetime, timezone, timedelta
-from pathlib import Path
+from datetime import datetime, timedelta, timezone
 from threading import Lock
+
+from jsonfile import load_json, save_json
 
 STORE_FILE = "broadcasts.json"
 _lock = Lock()
@@ -12,20 +12,12 @@ JST = timezone(timedelta(hours=9))
 
 
 def _load() -> list:
-    p = Path(STORE_FILE)
-    if not p.exists():
-        return []
-    try:
-        return json.loads(p.read_text(encoding="utf-8"))
-    except Exception:
-        return []
+    data = load_json(STORE_FILE, [])
+    return data if isinstance(data, list) else []
 
 
 def _save(broadcasts: list):
-    Path(STORE_FILE).write_text(
-        json.dumps(broadcasts, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    save_json(STORE_FILE, broadcasts)
 
 
 def list_broadcasts() -> list:

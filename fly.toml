@@ -9,6 +9,8 @@ primary_region = "nrt"
 [env]
   PORT = "8080"
 
+# ⚠️ マシンは必ず 1 台で運用すること（fly scale count 1）。
+# 通知・広告のスケジューラはプロセス内で動くため、2 台以上動かすと二重送信になる。
 [http_service]
   internal_port = 8080
   force_https = true

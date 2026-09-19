@@ -1,0 +1,6 @@
+-r requirements.txt
+pytest>=8.0
+ruff>=0.5
+# starlette の TestClient 用（新旧どちらの starlette でも動くよう両方）
+httpx>=0.27
+httpx2>=2.0

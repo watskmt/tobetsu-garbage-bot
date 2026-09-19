@@ -4,9 +4,10 @@
 ローカルに無い場合は Google Fonts から取得してキャッシュする。
 実行: python generate_banner.py
 """
-from PIL import Image, ImageDraw, ImageFont
-from pathlib import Path
 import urllib.request
+from pathlib import Path
+
+from PIL import Image, ImageDraw, ImageFont
 
 FONT_URL = "https://github.com/notofonts/noto-cjk/raw/main/Sans/Variable/TTF/Subset/NotoSansJP-VF.ttf"
 FONT_CACHE = Path.home() / ".cache" / "tobetsu-fonts" / "NotoSansJP-VF.ttf"

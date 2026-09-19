@@ -12,7 +12,7 @@
   <div class="mb-6">
     <p class="text-xs text-gray-400 mb-1">当別町ごみ収集日Bot</p>
     <h1 class="text-2xl font-bold text-gray-900">プライバシーポリシー</h1>
-    <p class="text-xs text-gray-400 mt-1">制定日: 2025年5月30日 ／ 最終改定日: 2026年7月23日</p>
+    <p class="text-xs text-gray-400 mt-1">制定日: 2025年5月30日 ／ 最終改定日: 2026年9月18日</p>
   </div>
 
   <div class="space-y-6 text-sm leading-relaxed">
@@ -32,10 +32,12 @@
         <li>LINE ユーザーID（利用者が本サービスを友だち追加・利用した際に LINE プラットフォームから自動的に付与される識別子）</li>
         <li>利用者が選択したごみ収集地区の番号</li>
         <li>利用者が設定した通知時刻</li>
+        <li>お知らせ（広告）配信の受信設定（オフにした場合のみ記録）</li>
       </ul>
       <p class="mt-2 mb-2 text-gray-700">また、サービスの安定運用・不具合対応のため、サーバー上で以下の情報が一時的に記録される場合があります。</p>
       <ul class="list-disc list-inside space-y-1 text-gray-700">
         <li>アクセス日時・通信に関する技術情報（アクセスログ・エラーログ）</li>
+        <li>お知らせ（広告）の配信数・タップ数の集計値（利用者ごとの記録は行わず、LINE ユーザーIDとも紐づけません）</li>
       </ul>
       <p class="mt-2 text-gray-500 text-xs">
         氏名・住所・電話番号・メールアドレスなど、利用者個人を直接特定できる情報は取得しません。
@@ -50,9 +52,15 @@
         <li>ごみ収集日の照会・通知機能の提供</li>
         <li>利用者が設定した地区・通知時刻の記憶と反映</li>
         <li>本サービスの維持・運用、品質改善および不具合への対応</li>
+        <li>本サービスの運営に関するお知らせ、および運営費用に充てるための広告の配信</li>
       </ul>
+      <p class="mt-2 text-gray-700">
+        お知らせ（広告）は本サービスの利用者全員に同じ内容を配信するものであり、地区・通知時刻などの設定に基づく出し分けは行いません。
+        受け取りを希望しない場合は、LINE のトーク画面で「広告オフ」と送信することでいつでも停止できます（「広告オン」で再開）。
+      </p>
       <p class="mt-2 text-gray-500 text-xs">
         本サービスは、利用者に無断で広告目的のプロファイリングや、収集した情報の販売を行いません。
+        広告主に対して利用者の情報を提供することもありません。
       </p>
     </section>
 
@@ -107,26 +115,6 @@
   </div>
 </div>
 
-<script>
-async function loadInfo() {
-  try {
-    const res = await fetch('/api/bot-info');
-    const info = await res.json();
-    if (info.operator_name) {
-      document.getElementById('operator-name').textContent = info.operator_name;
-      document.querySelectorAll('.operator-name-ref').forEach(el => el.textContent = info.operator_name);
-    }
-
-    const contact = document.getElementById('contact-info');
-    contact.innerHTML = `<p class="font-medium mb-1">${info.operator_name || '当別町ごみ収集日Bot運営者'}</p>` +
-      (info.operator_email
-        ? `<p>メール: <a href="mailto:${info.operator_email}" class="text-blue-500">${info.operator_email}</a></p>`
-        : `<p class="text-gray-500">お問い合わせは本サービスの LINE トーク画面よりご連絡ください。</p>`);
-  } catch(e) {}
-
-  document.getElementById('copyright-year').textContent = new Date().getFullYear();
-}
-loadInfo();
-</script>
+<script src="/static/docs.js"></script>
 </body>
 </html>

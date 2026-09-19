@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import json
-from datetime import datetime, timezone, timedelta
-from pathlib import Path
+from datetime import datetime, timedelta, timezone
 from threading import Lock
+
+from jsonfile import load_json, save_json
 
 STORE_FILE = "clicks.json"
 _lock = Lock()
@@ -15,20 +15,11 @@ def _default() -> dict:
 
 
 def _load() -> dict:
-    p = Path(STORE_FILE)
-    if not p.exists():
-        return {}
-    try:
-        return json.loads(p.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+    return load_json(STORE_FILE, {})
 
 
 def _save(data: dict):
-    Path(STORE_FILE).write_text(
-        json.dumps(data, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    save_json(STORE_FILE, data)
 
 
 def _entry(data: dict, bid: str) -> dict:

@@ -94,21 +94,28 @@ https://<ドメイン>/admin
 ```
 tobetsu-garbage-bot/
 ├── app.py               # FastAPIメインアプリ（LINEボット＋管理API＋スケジューラ）
-├── calendar_parser.py   # スケジュール生成・管理クラス
-├── user_store.py        # ユーザー地区設定・通知時刻の読み書き
+├── calendar_parser.py   # スケジュール生成・管理クラス（rules.json + corrections.json）
+├── user_store.py        # ユーザー地区設定・通知時刻・広告オプトアウトの読み書き
 ├── broadcast_store.py   # 広告ブロードキャストスケジュールの読み書き
-├── rules.json           # 各地区の収集曜日ルール（要編集）
+├── click_store.py       # 広告バナーの配信数・タップ数（集計値のみ）
+├── jsonfile.py          # JSON ファイルのアトミック読み書き（各 store 共通）
+├── rules.json           # 各地区の収集曜日ルール・祝日設定（要編集）
 ├── corrections.json     # 例外日の手動修正（管理画面から自動更新）
-├── users.json           # ユーザー別地区設定・通知時刻（自動生成）
 ├── broadcasts.json      # 広告ブロードキャストスケジュール（管理画面から自動更新）
-├── requirements.txt     # Pythonパッケージ一覧
-├── Procfile             # Heroku互換起動設定
+├── users.json           # ユーザー別設定（自動生成・Gitに含めない）
+├── clicks.json          # 広告計測値（自動生成・Gitに含めない）
+├── requirements.txt     # Pythonパッケージ一覧（本番）
+├── requirements-dev.txt # テスト・Lint 用パッケージ
+├── pyproject.toml       # ruff / pytest 設定
+├── tests/               # pytest（ストア・カレンダー生成・API）
+├── entrypoint.sh        # Fly.io 起動時にボリュームへデータを配置してから uvicorn 起動
+├── Dockerfile / fly.toml
 ├── .env                 # 環境変数（Gitに含めない）
-├── static/
-│   ├── admin.html       # 管理Webページ（カレンダー編集・広告管理）
-│   ├── privacy.html     # プライバシーポリシーページ
-│   └── terms.html       # 利用規約ページ
-└── cache/               # PDF解析キャッシュ（Gitに含めない）
+└── static/
+    ├── admin.html       # 管理Webページ（カレンダー編集・広告管理）
+    ├── privacy.html     # プライバシーポリシーページ
+    ├── terms.html       # 利用規約ページ
+    └── docs.js          # privacy/terms 共通スクリプト（運営者情報の埋め込み）
 ```
 
 ### Gitに含めないファイル（.gitignore）
@@ -116,10 +123,11 @@ tobetsu-garbage-bot/
 | ファイル | 理由 |
 |----------|------|
 | `.env` | LINEシークレット・管理パスワードが含まれる |
-| `cache/` | 自動生成される大きなキャッシュ |
+| `users.json` | **実ユーザーの LINE userId を含む**（プライバシーポリシー上、公開リポジトリに置けない） |
+| `clicks.json` | 運用中の計測値 |
 | `venv/` | 環境依存のパッケージ群 |
 
-> ⚠️ `corrections.json`・`users.json`・`broadcasts.json` はGit管理されていますが、EC2サーバーでの変更が保護されます（デプロイスクリプトで上書きしない）。
+> `corrections.json`・`broadcasts.json`（管理者が作る設定）は Git 管理されています。本番の実体は Fly.io のボリューム `/data` 上にあり、`entrypoint.sh` が初回起動時にのみイメージ同梱分をコピーするため、デプロイで上書きされることはありません。
 
 ---
 
@@ -162,6 +170,17 @@ cloudflared tunnel --url http://localhost:8000
 
 表示された `https://xxxx.trycloudflare.com` を LINE Developers Console の Webhook URL に設定する。
 
+### テスト・Lint
+
+```bash
+pip install -r requirements-dev.txt
+ruff check .      # Lint
+pytest -q         # テスト（tests/）
+```
+
+GitHub Actions（`.github/workflows/ci.yml`）が push / PR ごとに同じチェックを実行します。
+テストは一時ディレクトリで動くため、リポジトリ内の `users.json` などを書き換えることはありません。
+
 ---
 
 ## 5. 収集ルールの管理
@@ -187,6 +206,25 @@ cloudflared tunnel --url http://localhost:8000
 | `nth` | 第N週のみ収集（省略すると毎週） |
 | `type` | ごみ種別（下記5種類から選ぶ） |
 
+### 祝日・年末年始の休止設定（`holidays`）
+
+`rules.json` のトップレベル `holidays` で、ルール生成時に収集なしとする日を指定できます。
+
+```json
+"holidays": {
+  "skip_on_national_holidays": true,
+  "closed_periods": [{"from": "12-31", "to": "01-03"}]
+}
+```
+
+| キー | 説明 |
+|------|------|
+| `skip_on_national_holidays` | `true` にすると国民の祝日（`jpholiday` 判定）は全地区で収集なしになる |
+| `closed_periods` | 毎年固定の休止期間（`MM-DD`、年跨ぎ可）。年末年始など |
+
+> ⚠️ 初期値はどちらも **無効**（`false` / `[]`）です。当別町の祝日運用（祝日も収集するのか、翌週に振替なのか）を確認してから有効化してください。
+> 有効化しても、振替収集（例: 祝日の燃えないごみを翌週に移す）は自動化できないため、従来どおり `corrections.json`（管理画面）で個別に設定します。
+
 ### ごみ種別の正式表記
 
 | 表記 | 管理画面表示 |
@@ -210,13 +248,8 @@ cloudflared tunnel --url http://localhost:8000
 
 ### ルール変更後の反映
 
-```bash
-scp -i ~/Downloads/tobetsu-key.pem \
-  /Users/watsk/tobetsu-garbage-bot/rules.json \
-  ec2-user@18.180.39.33:/home/ec2-user/tobetsu-garbage-bot/
-
-sudo systemctl restart tobetsu-bot
-```
+`rules.json` はイメージに同梱されるため、`master` に push すれば GitHub Actions が Fly.io にデプロイして反映されます。
+再起動せずに反映したい場合は、LINE で「再読込」と送ると `reload()` が走ります。
 
 ---
 
@@ -307,24 +340,32 @@ sudo systemctl restart tobetsu-bot
 {
   "Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx": {
     "district": 3,
-    "notify_time": "07:00"
+    "notify_time": "07:00",
+    "ads_opt_out": true
   }
 }
 ```
 
 | フィールド | 説明 |
 |-----------|------|
-| `district` | 収集地区（1〜4） |
+| `district` | 収集地区（1〜4）。通知だけ先に設定したユーザーはこのキーを持たない（通知は送られない） |
 | `notify_time` | 通知時刻（`"HH:00"` 形式、未設定なら通知なし） |
+| `ads_opt_out` | `true` なら広告ブロードキャストの対象外（未設定＝受信） |
+
+書き込みは `jsonfile.save_json` により一時ファイル + `os.replace` で行うため、途中でプロセスが落ちてもファイルは壊れません。
 
 ### ユーザー向けコマンド
 
 | 送信内容 | 動作 |
 |---------|------|
 | `通知設定` | 時刻選択クイックリプライを表示 |
-| `通知7時` / `7時通知` / `毎朝8時` | 毎日その時刻に通知を設定（正時のみ） |
+| `通知7時` / `7時通知` / `毎朝8時` / `7時に通知` | 毎日その時刻に通知を設定（正時のみ） |
 | `通知オフ` / `通知OFF` / `通知なし` | 通知を停止 |
 | `通知確認` | 現在の設定を表示 |
+| `広告オフ` / `広告オン` | 広告ブロードキャストの受信設定 |
+
+時刻の解析は「通知／毎朝／毎日」を伴うメッセージ全体にのみマッチします（`fullmatch`）。
+「9時間かかった」「今日は7時に…」のような文章で誤って通知が設定されることはありません。
 
 ---
 
@@ -332,7 +373,11 @@ sudo systemctl restart tobetsu-bot
 
 ### 概要
 
-管理画面からテキストまたは画像バナーを、設定したスケジュールで全ユーザーにPush送信する機能です。
+管理画面からテキストまたは画像バナーを、設定したスケジュールで全ユーザーに送信する機能です。
+
+- 送信には LINE の **multicast API**（最大 500 ユーザー/回）を使用します。ユーザーごとの `push_message` ではありません。
+- 「広告オフ」を送ったユーザー（`ads_opt_out: true`）は対象から除外されます。
+- 広告配信とオプトアウト手段は利用規約 5 条・プライバシーポリシー 1〜2 条に明記しています。文言を変える場合は両文書も合わせて改訂してください。
 
 ### スケジュール種別
 
@@ -386,7 +431,7 @@ sudo systemctl restart tobetsu-bot
 3. 登録後、一覧に表示される
 4. 各スケジュールの操作：
    - **有効/無効トグル**：スケジューラへの登録・解除
-   - **今すぐ送信**：即時に全ユーザーへPush（確認ダイアログあり）
+   - **今すぐ送信**：即時に全ユーザー（広告オフを除く）へ送信（確認ダイアログあり）
    - **削除**：スケジュールを削除
 
 ### API エンドポイント（すべてBearer認証必須）
@@ -397,7 +442,7 @@ sudo systemctl restart tobetsu-bot
 | POST | `/api/broadcasts` | スケジュール作成 |
 | PATCH | `/api/broadcasts/{id}` | 有効/無効切替・内容更新 |
 | DELETE | `/api/broadcasts/{id}` | スケジュール削除 |
-| POST | `/api/broadcasts/{id}/send` | 今すぐ全ユーザーへ送信 |
+| POST | `/api/broadcasts/{id}/send` | 今すぐ全ユーザー（広告オフを除く）へ送信 |
 
 ---
 
@@ -415,7 +460,15 @@ LINE Bot を公式に運用するために必要な、プライバシーポリ�
 | `/terms` | 利用規約 |
 | `/api/bot-info` | 運営者情報 JSON（認証不要） |
 
-`/privacy` と `/terms` は `/api/bot-info` から運営者名・連絡先を動的に取得して表示します。
+`/privacy` と `/terms` は `/static/docs.js` が `/api/bot-info` から運営者名・連絡先を取得して埋め込みます。
+
+これらのページは管理画面から差し替え可能で、かつ `admin.html` と同一オリジン（管理トークンは localStorage）にあるため、
+`Content-Security-Policy` でインラインスクリプトを禁止して配信しています。
+**差し替え用の HTML には `<script>...</script>` を書かず、必要なら `<script src="/static/docs.js"></script>` を使ってください。**
+許可されている外部スクリプトは `https://cdn.tailwindcss.com` のみです。
+
+デプロイ時の扱い（`entrypoint.sh`）: ボリューム上の文書が「前回イメージから配置したまま」なら新しいイメージの内容で更新し、
+管理画面からアップロードされたものはそのまま残します（判定は `/data/static/.seed/*.sha256` のハッシュ）。
 
 ### 環境変数
 
@@ -429,7 +482,8 @@ LINE Bot を公式に運用するために必要な、プライバシーポリ�
 
 | 送信内容 | 応答 |
 |---------|------|
-| `このBotについて` / `ヘルプ` / `運営情報` | 運営者情報・リンク一覧 |
+| `このBotについて` / `運営情報` | 運営者情報・リンク一覧 |
+| `ヘルプ` / `使い方` | コマンド一覧 |
 | `プライバシーポリシー` | `/privacy` のURL |
 | `利用規約` | `/terms` のURL |
 

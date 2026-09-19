@@ -4,12 +4,11 @@ import calendar as cal_module
 import hashlib
 import hmac
 import html
-import json
 import logging
 import os
 import re
 import secrets
-from datetime import date, datetime, timezone, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -17,6 +16,7 @@ import jpholiday
 from apscheduler.schedulers.background import BackgroundScheduler
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from linebot.v3 import WebhookHandler
@@ -24,13 +24,14 @@ from linebot.v3.exceptions import InvalidSignatureError
 from linebot.v3.messaging import (
     ApiClient,
     Configuration,
-    MessagingApi,
-    MessageAction,
-    FlexBubble,
     FlexBox,
+    FlexBubble,
     FlexImage,
     FlexMessage,
     ImageMessage,
+    MessageAction,
+    MessagingApi,
+    MulticastRequest,
     PushMessageRequest,
     QuickReply,
     QuickReplyItem,
@@ -43,7 +44,8 @@ from linebot.v3.webhooks import FollowEvent, MessageEvent, TextMessageContent, U
 import broadcast_store
 import click_store
 import user_store
-from calendar_parser import GarbageCalendar, DISTRICT_NAMES
+from calendar_parser import DISTRICT_NAMES, GarbageCalendar, load_corrections
+from jsonfile import save_json
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +53,16 @@ JST = timezone(timedelta(hours=9))
 
 load_dotenv()
 
-LINE_ACCESS_TOKEN = os.environ["LINE_CHANNEL_ACCESS_TOKEN"]
-LINE_CHANNEL_SECRET = os.environ["LINE_CHANNEL_SECRET"]
+
+def _require_env(name: str) -> str:
+    value = os.environ.get(name, "").strip()
+    if not value:
+        raise RuntimeError(f"環境変数 {name} が設定されていません。.env または fly secrets を確認してください。")
+    return value
+
+
+LINE_ACCESS_TOKEN = _require_env("LINE_CHANNEL_ACCESS_TOKEN")
+LINE_CHANNEL_SECRET = _require_env("LINE_CHANNEL_SECRET")
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -105,6 +115,9 @@ def _next_occurrence(day_of_week: int, hour: int) -> datetime:
     )
 
 
+MULTICAST_CHUNK = 500   # LINE Messaging API の multicast 上限
+
+
 def _push_broadcast_to_all(broadcast: dict):
     if broadcast["type"] == "text":
         msg = TextMessage(text=broadcast["text"])
@@ -141,16 +154,18 @@ def _push_broadcast_to_all(broadcast: dict):
     else:
         return
 
-    users = user_store._load()
+    # 広告オフのユーザーを除外し、multicast（最大500件/回）でまとめて送信する
+    targets = user_store.get_broadcast_targets()
     sent = 0
     with ApiClient(config) as api_client:
         api = MessagingApi(api_client)
-        for uid in users:
+        for i in range(0, len(targets), MULTICAST_CHUNK):
+            chunk = targets[i:i + MULTICAST_CHUNK]
             try:
-                api.push_message(PushMessageRequest(to=uid, messages=[msg]))
-                sent += 1
+                api.multicast(MulticastRequest(to=chunk, messages=[msg]))
+                sent += len(chunk)
             except Exception as e:
-                logger.error("broadcast push failed user=%s: %s", uid, e)
+                logger.error("broadcast multicast failed (%d users): %s", len(chunk), e)
 
     # 送信到達数（インプレッション）を記録
     if broadcast.get("id") and broadcast.get("type") == "image" and broadcast.get("link_url"):
@@ -216,12 +231,18 @@ BOT_BASE_URL       = os.environ.get("BOT_BASE_URL", "")
 GARBAGE_INFO_URL   = os.environ.get("GARBAGE_INFO_URL", "https://www.town.tobetsu.hokkaido.jp/soshiki/kankyo/15050.html")
 
 
-_login_attempts = {}
+_login_attempts: dict[str, list[datetime]] = {}
+
+
+def _client_ip(request: Request) -> str:
+    """Fly.io のエッジ経由では request.client がプロキシになるため Fly-Client-IP を優先する。
+    X-Forwarded-For はクライアントが自由に付けられるため使わない。"""
+    return request.headers.get("fly-client-ip") or (request.client.host if request.client else "unknown")
 
 
 def _admin_token() -> str:
     """サーバー秘密鍵から管理者トークンを生成（決定論的HMAC、日替わり）"""
-    today_str = date.today().isoformat()
+    today_str = datetime.now(JST).date().isoformat()
     msg = f"admin-session-{today_str}".encode()
     return hmac.new(_ADMIN_SECRET.encode(), msg, hashlib.sha256).hexdigest()
 
@@ -246,8 +267,11 @@ def admin_check(authorization: Optional[str] = Header(None)):
 async def admin_login(request: Request):
     """パスワード検証 → トークン発行"""
     # 簡易レートリミット（1時間に30回までの失敗を許容）
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = _client_ip(request)
     now = datetime.now()
+    # 期限切れエントリを掃除（無制限にメモリが増えないように）
+    for ip in [ip for ip, ts in _login_attempts.items() if not ts or now - ts[-1] >= timedelta(hours=1)]:
+        _login_attempts.pop(ip, None)
     attempts = _login_attempts.get(client_ip, [])
     recent_attempts = [a for a in attempts if now - a < timedelta(hours=1)]
     if len(recent_attempts) >= 30:
@@ -283,13 +307,14 @@ def _help_text() -> str:
         "【収集日の確認】\n"
         "・今日 → 今日の収集ごみ\n"
         "・明日 → 明日の収集ごみ\n"
-        "・今週 → 今後7日間の収集予定\n"
-        "・今月 → 今月の収集予定\n"
+        "・１週間 → 今日から7日間の収集予定\n"
+        "・今月 → 今日から30日間の収集予定\n"
         "\n"
         "【設定】\n"
         "・地区変更 → 地区を変更する\n"
         "・通知設定 → 毎朝の通知時刻を設定\n"
         "・通知オフ → 毎朝の通知を停止\n"
+        "・広告オフ / 広告オン → お知らせ配信の受信設定\n"
         + (f"\n【ごみの出し方】\n{GARBAGE_INFO_URL}\n" if GARBAGE_INFO_URL else "")
         + "\n【その他】\n"
         "・このBotについて → 運営情報\n"
@@ -308,7 +333,7 @@ DISTRICT_GUIDE = (
     "地区を選択してください。\n\n"
     "1地区: 弥生・園生(旭町・万代町)・青山・弁華別・茂平沢・みどり野\n"
     "2地区: 金沢・中小屋・東裏・蕨岱町\n"
-    "3地区: 白白樺町・下川町・末広・西町・錦町・北栄町・美里・六軒町・若葉・上当別・スウェーデンヒルズ\n"
+    "3地区: 白樺町・下川町・末広・西町・錦町・北栄町・美里・六軒町・若葉・上当別・スウェーデンヒルズ\n"
     "4地区: 春日町・樺戸町・幸町・栄町・対雁・東町・緑町・元町・太美(東・西・南・北・中央・寿・スターライト)・高岡・獅子内・ビトエ・当別太・川下(右岸・左岸)"
 )
 
@@ -319,18 +344,21 @@ NOTIFY_QUICK_REPLY = QuickReply(items=[
     QuickReplyItem(action=MessageAction(label="通知オフ", text="通知オフ")),
 ])
 
-# "通知7時" "7時通知" "毎朝7時" 等を HH:00 に変換（正時のみ受付）
+# "通知7時" "7時通知" "毎朝7時" "7時に通知" 等を HH:00 に変換（正時のみ受付）。
+# 「9時間かかった」「今日は7時に…」のような文章で誤って通知が設定されないよう、
+# 通知/毎朝/毎日 のいずれかを伴うメッセージ全体にのみマッチさせる。
 _TIME_PATTERN = re.compile(
-    r"(?:通知|毎朝|毎日)?([０-９0-9]{1,2})時(?:通知|に通知)?"
+    r"(?:(?:通知|毎朝|毎日)\s*([0-9]{1,2})\s*時(?:\s*(?:に)?通知)?"
+    r"|([0-9]{1,2})\s*時\s*(?:に)?通知)"
 )
 
 def _parse_notify_time(text: str) -> str | None:
     """テキストから正時を解析して "HH:00" 形式で返す。解析失敗時は None。"""
-    t = text.translate(str.maketrans("０１２３４５６７８９", "0123456789"))
-    m = _TIME_PATTERN.search(t)
+    t = text.translate(str.maketrans("０１２３４５６７８９", "0123456789")).strip()
+    m = _TIME_PATTERN.fullmatch(t)
     if not m:
         return None
-    hour = int(m.group(1))
+    hour = int(m.group(1) or m.group(2))
     if not (0 <= hour <= 23):
         return None
     return f"{hour:02d}:00"
@@ -341,9 +369,10 @@ async def webhook(request: Request):
     signature = request.headers.get("X-Line-Signature", "")
     body = await request.body()
     try:
-        handler.handle(body.decode(), signature)
+        # handler.handle() は同期で LINE API を呼ぶためスレッドプールで実行する
+        await run_in_threadpool(handler.handle, body.decode(), signature)
     except InvalidSignatureError:
-        raise HTTPException(status_code=400, detail="Invalid signature")
+        raise HTTPException(status_code=400, detail="Invalid signature") from None
     return "OK"
 
 
@@ -385,7 +414,7 @@ def handle_message(event):
     if text in district_map:
         d = district_map[text]
         user_store.set_district(user_id, d)
-        reply(event, f"{DISTRICT_NAMES[d]} に設定しました。\n「今日」「明日」「今週」で収集日を確認できます。")
+        reply(event, f"{DISTRICT_NAMES[d]} に設定しました。\n「今日」「明日」「１週間」で収集日を確認できます。")
         return
 
     if text in ("地区変更", "地区設定", "設定"):
@@ -419,7 +448,23 @@ def handle_message(event):
     notify_time = _parse_notify_time(text)
     if notify_time:
         user_store.set_notify_time(user_id, notify_time)
-        reply(event, f"毎日 {notify_time} にごみ収集情報を通知します。\n停止するには「通知オフ」と送ってください。")
+        msg = f"毎日 {notify_time} にごみ収集情報を通知します。\n停止するには「通知オフ」と送ってください。"
+        if user_store.get_district(user_id) is None:
+            reply(event, msg + "\n\n※通知を受け取るには地区の設定が必要です。\n" + DISTRICT_GUIDE,
+                  quick_reply=DISTRICT_QUICK_REPLY)
+        else:
+            reply(event, msg)
+        return
+
+    # 広告（お知らせ配信）のオプトアウト
+    if text in ("広告オフ", "広告OFF", "広告停止", "お知らせオフ", "お知らせ停止"):
+        user_store.set_ads_opt_out(user_id, True)
+        reply(event, "お知らせ（広告）の配信をオフにしました。\n再開するには「広告オン」と送ってください。")
+        return
+
+    if text in ("広告オン", "広告ON", "お知らせオン"):
+        user_store.set_ads_opt_out(user_id, False)
+        reply(event, "お知らせ（広告）の配信をオンにしました。")
         return
 
     district = user_store.get_district(user_id)
@@ -436,9 +481,8 @@ def handle_message(event):
     elif text in ("今月", "こんげつ", "一ヶ月", "1ヶ月", "来月まで"):
         reply(event, calendar.get_month(district))
     elif text in ("再読込", "リロード", "更新"):
-        calendar.clear_cache()
         calendar.reload()
-        reply(event, "カレンダーデータを再取得しました。")
+        reply(event, "収集スケジュールを再生成しました。")
     elif text in ("ヘルプ", "help", "？", "?", "使い方", "メニュー"):
         reply(event, _help_text())
     elif text in ("このBotについて", "このbotについて", "運営情報", "運営者", "Bot情報", "bot情報"):
@@ -483,14 +527,31 @@ def admin_page():
     return FileResponse("static/admin.html")
 
 
+# 管理画面から差し替え可能な文書は admin.html と同一オリジンで配信されるため、
+# インラインスクリプトを禁止して localStorage の管理トークンを守る。
+# 文書内の動的処理は /static/docs.js に置く。
+_DOC_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' https://cdn.tailwindcss.com; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data:; "
+    "connect-src 'self'; "
+    "object-src 'none'; base-uri 'none'"
+)
+
+
+def _doc_response(path: str) -> FileResponse:
+    return FileResponse(path, headers={"Content-Security-Policy": _DOC_CSP})
+
+
 @app.get("/privacy")
 def privacy_page():
-    return FileResponse("static/privacy.html")
+    return _doc_response("static/privacy.html")
 
 
 @app.get("/terms")
 def terms_page():
-    return FileResponse("static/terms.html")
+    return _doc_response("static/terms.html")
 
 
 # ------------------------------------------------------------------ #
@@ -577,13 +638,12 @@ def api_schedule(district: int, year: int, month: int, _=Depends(require_admin))
     calendar.ensure_fiscal_year(district, fy)
 
     _, days_in_month = cal_module.monthrange(year, month)
-    corrections = _load_corrections_raw()
-    district_corrections = corrections.get(str(district), {})
+    district_corrections = load_corrections().get(str(district), {})
     result = {}
     for day in range(1, days_in_month + 1):
         d = date(year, month, day)
         key = d.strftime("%Y-%m-%d")
-        types = calendar._schedules.get(district, {}).get(key, [])
+        types = calendar.get_types(district, d)
         holiday_name = jpholiday.is_holiday_name(d) or ""
         result[key] = {
             "types": types,
@@ -601,7 +661,7 @@ async def api_correction(request: Request, _=Depends(require_admin)):
     date_key = body["date"]
     types = body.get("types")   # None = ルールに戻す, [] = 収集なし, [...] = 上書き
 
-    corrections = _load_corrections_raw()
+    corrections = load_corrections()
     if district_key not in corrections:
         corrections[district_key] = {}
 
@@ -610,23 +670,9 @@ async def api_correction(request: Request, _=Depends(require_admin)):
     else:
         corrections[district_key][date_key] = types
 
-    Path("corrections.json").write_text(
-        json.dumps({"_comment": "手動修正", **corrections}, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    save_json("corrections.json", {"_comment": "手動修正", **corrections})
     calendar.reload()
     return {"status": "ok"}
-
-
-def _load_corrections_raw() -> dict:
-    path = Path("corrections.json")
-    if not path.exists():
-        return {}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        return {k: v for k, v in data.items() if not k.startswith("_")}
-    except Exception:
-        return {}
 
 
 # ------------------------------------------------------------------ #
