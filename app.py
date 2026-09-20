@@ -8,6 +8,7 @@ import logging
 import os
 import re
 import secrets
+import unicodedata
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
@@ -344,6 +345,31 @@ NOTIFY_QUICK_REPLY = QuickReply(items=[
     QuickReplyItem(action=MessageAction(label="通知オフ", text="通知オフ")),
 ])
 
+# ヘルプや案内の行をそのままコピーして送られても意図を汲めるようにするための正規化。
+#   "・プライバシーポリシー "      → "プライバシーポリシー"
+#   "・今日 → 今日の収集ごみ"      → "今日"
+#   "・広告オフ / 広告オン → …"    → "広告オフ"
+#   "【利用規約】"                 → "利用規約"
+_ARROW_PATTERN = re.compile(r"\s*(?:→|⇒|➡|=>|->).*$", re.DOTALL)
+
+# 先頭に付く箇条書き・装飾記号。末尾側では剥がさない
+# （"プライバシーポリシー" "メニュー" など長音符で終わるコマンドがあるため）
+_LEADING_DECOR = "・•‣◦●○◯■□◆◇▶▷▼*+#>»-‐‑–—―=|「『【〔[( \t"
+_TRAILING_DECOR = "」』】〕])。.、,;: \t"
+
+
+def _normalize(text: str) -> str:
+    """ユーザー入力を照合用に正規化する。
+
+    全角/半角・カタカナの揺れ（NFKC）をならし、箇条書き記号・説明文（矢印以降）・
+    「/」区切りの別案内を取り除く。末尾の長音符は残す。
+    """
+    t = unicodedata.normalize("NFKC", text)
+    t = _ARROW_PATTERN.sub("", t)      # "→ 説明" 以降を落とす
+    t = t.split("/")[0]                # "広告オフ / 広告オン" → "広告オフ"
+    return t.lstrip(_LEADING_DECOR).rstrip(_TRAILING_DECOR).strip()
+
+
 # "通知7時" "7時通知" "毎朝7時" "7時に通知" 等を HH:00 に変換（正時のみ受付）。
 # 「9時間かかった」「今日は7時に…」のような文章で誤って通知が設定されないよう、
 # 通知/毎朝/毎日 のいずれかを伴うメッセージ全体にのみマッチさせる。
@@ -402,7 +428,7 @@ def handle_unfollow(event):
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
     user_id = event.source.user_id
-    text = event.message.text.strip()
+    text = _normalize(event.message.text)
 
     # 地区設定
     district_map = {
