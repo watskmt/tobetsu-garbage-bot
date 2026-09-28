@@ -515,12 +515,16 @@ LINE の審査・運用要件として、チャネル設定に以下のURLを登
 ```
 ログイン: ADMIN_PASSWORD を検証
     ↓
-トークン発行: HMAC-SHA256(ADMIN_SECRET_KEY, "admin-session")
+トークン発行: HMAC-SHA256(ADMIN_SECRET_KEY, "admin-session-{YYYY-MM-DD}")
     ↓
 ブラウザの localStorage に保存
     ↓
 以降の API リクエストに Authorization: Bearer <token> を付与
 ```
+
+`{YYYY-MM-DD}` は日本時間（JST）の日付で、`datetime.now(JST).date().isoformat()` の値です。
+`ADMIN_SECRET_KEY` を変えていなくても、日本時間の深夜 0 時を過ぎるとメッセージが変わり、トークンも切り替わります。
+ブラウザに保存している Bearer トークンは日付が変わった時点で使えなくなり、管理画面への再ログインが必要です。
 
 ### 役割の違い
 
