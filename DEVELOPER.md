@@ -13,10 +13,7 @@
 9. [広告ブロードキャスト機能](#9-広告ブロードキャスト機能)
 10. [運営者情報・法的文書](#10-運営者情報法的文書)
 11. [認証・セキュリティ](#11-認証セキュリティ)
-12. [本番サーバー（AWS EC2）へのデプロイ](#12-本番サーバーaws-ec2へのデプロイ)
-13. [コード更新手順](#13-コード更新手順)
-14. [運用コマンド](#14-運用コマンド)
-15. [トラブルシューティング](#15-トラブルシューティング)
+12. [トラブルシューティング](#12-トラブルシューティング)
 
 ---
 
@@ -37,7 +34,7 @@
 | 例外設定 | corrections.json |
 | Push通知・広告スケジュール | APScheduler（BackgroundScheduler） |
 | 管理UI | バニラHTML/CSS/JS（static/admin.html） |
-| 本番環境 | AWS EC2 t2.micro + Nginx + Let's Encrypt |
+| 本番環境 | Fly.io（`fly.toml`。起動は `entrypoint.sh`。`master` への push で `.github/workflows/deploy.yml` が `flyctl deploy --remote-only` を実行） |
 | ドメイン | DuckDNS（無料） |
 
 ---
@@ -332,7 +329,7 @@ GitHub Actions（`.github/workflows/ci.yml`）が push / PR ごとに同じチ�
 
 ### タイムゾーン
 
-`calendar_parser.py` の日付取得は `datetime.now(JST).date()` を使用しています。EC2 のシステムタイムゾーン（UTC）に依存しないため、早朝の通知でも正しく当日の収集情報を返します。
+`calendar_parser.py` の日付取得は `datetime.now(JST).date()` を使用しています。システムのタイムゾーンに依存しないため、早朝の通知でも正しく当日の収集情報を返します。
 
 ### users.json のデータ構造
 
@@ -529,15 +526,6 @@ LINE の審査・運用要件として、チャネル設定に以下のURLを登
 | `ADMIN_PASSWORD` | 次回ログインから新パスワードが必要になる |
 | `ADMIN_SECRET_KEY` | **既存の全セッションが即時無効化**される |
 
-### 不正アクセス時の対応
-
-```bash
-vi /home/ec2-user/tobetsu-garbage-bot/.env
-# ADMIN_SECRET_KEY を変更して保存
-
-sudo systemctl restart tobetsu-bot
-```
-
 ### ADMIN_SECRET_KEY の生成
 
 ```bash
@@ -546,157 +534,18 @@ openssl rand -hex 32
 
 ---
 
-## 12. 本番サーバー（AWS EC2）へのデプロイ
-
-### サーバー情報
-
-| 項目 | 値 |
-|------|-----|
-| サーバー | AWS EC2 t2.micro (Amazon Linux 2023) |
-| Elastic IP | 18.180.39.33 |
-| ドメイン | tobetsu-bot.duckdns.org |
-| アプリパス | `/home/ec2-user/tobetsu-garbage-bot/` |
-| サービス名 | `tobetsu-bot` (systemd) |
-
-### SSH接続
-
-```bash
-ssh -i ~/Downloads/tobetsu-key.pem ec2-user@18.180.39.33
-```
-
-### .env の設定（EC2側）
-
-```env
-LINE_CHANNEL_ACCESS_TOKEN=xxxx
-LINE_CHANNEL_SECRET=xxxx
-ADMIN_PASSWORD=強いパスワード
-ADMIN_SECRET_KEY=（openssl rand -hex 32 で生成）
-BOT_OPERATOR_NAME=当別町ごみ収集日Bot運営者
-BOT_OPERATOR_EMAIL=your@example.com
-BOT_BASE_URL=https://tobetsu-bot.duckdns.org
-```
-
----
-
-## 13. コード更新手順
-
-### GitHub Actions（自動デプロイ）
-
-`master` ブランチへのプッシュで自動デプロイが実行されます。
-
-デプロイ対象ファイル（サーバー側データは保護）：
-
-```
-app.py / broadcast_store.py / calendar_parser.py / user_store.py
-rules.json / requirements.txt / static/admin.html
-static/privacy.html / static/terms.html / DEVELOPER.md / USER.md
-```
-
-保護されるファイル（デプロイで上書きされない）：
-
-```
-corrections.json / users.json / broadcasts.json / .env
-```
-
-### 手動転送 → 再起動
-
-```bash
-scp -i ~/Downloads/tobetsu-key.pem \
-  /Users/watsk/tobetsu-garbage-bot/app.py \
-  /Users/watsk/tobetsu-garbage-bot/broadcast_store.py \
-  /Users/watsk/tobetsu-garbage-bot/calendar_parser.py \
-  ec2-user@18.180.39.33:/home/ec2-user/tobetsu-garbage-bot/
-
-scp -i ~/Downloads/tobetsu-key.pem \
-  /Users/watsk/tobetsu-garbage-bot/static/admin.html \
-  /Users/watsk/tobetsu-garbage-bot/static/privacy.html \
-  /Users/watsk/tobetsu-garbage-bot/static/terms.html \
-  ec2-user@18.180.39.33:/home/ec2-user/tobetsu-garbage-bot/static/
-
-sudo systemctl restart tobetsu-bot
-```
-
-### サーバー側データのバックアップ
-
-```bash
-scp -i ~/Downloads/tobetsu-key.pem \
-  ec2-user@18.180.39.33:/home/ec2-user/tobetsu-garbage-bot/corrections.json \
-  ec2-user@18.180.39.33:/home/ec2-user/tobetsu-garbage-bot/users.json \
-  ec2-user@18.180.39.33:/home/ec2-user/tobetsu-garbage-bot/broadcasts.json \
-  /Users/watsk/tobetsu-garbage-bot/
-```
-
----
-
-## 14. 運用コマンド
-
-### サービス管理
-
-```bash
-sudo systemctl status tobetsu-bot   # 状態確認
-sudo systemctl restart tobetsu-bot  # 再起動
-sudo systemctl stop tobetsu-bot     # 停止
-sudo systemctl start tobetsu-bot    # 起動
-```
-
-### ログ確認
-
-```bash
-sudo journalctl -u tobetsu-bot -f             # リアルタイム
-sudo journalctl -u tobetsu-bot -n 100         # 直近100行
-sudo journalctl -u tobetsu-bot --since today  # 今日分
-```
-
-### Nginx
-
-```bash
-sudo nginx -t                    # 設定テスト
-sudo systemctl reload nginx      # 設定リロード
-sudo systemctl restart nginx     # 再起動
-```
-
-### SSL証明書（Let's Encrypt）
-
-```bash
-sudo certbot renew --dry-run        # 自動更新テスト
-sudo certbot renew --force-renewal  # 強制更新
-```
-
----
-
-## 15. トラブルシューティング
+## 12. トラブルシューティング
 
 ### LINEボットが応答しない
 
-```bash
-sudo systemctl status tobetsu-bot
-sudo journalctl -u tobetsu-bot -n 50
-sudo systemctl status nginx
-# LINE Developers Console で Webhook URL を確認・検証
-```
+LINE Developers Console で Webhook URL を確認・検証する。
 
 ### Push通知が届かない
-
-```bash
-# ユーザーの通知時刻設定を確認
-cat /home/ec2-user/tobetsu-garbage-bot/users.json
-
-# スケジューラのログを確認（"push failed" エラーが出ていないか）
-sudo journalctl -u tobetsu-bot --since today | grep push
-```
 
 - LINE Messaging API の Push 送信は有料プランが必要な場合があります
 - 収集なしの日は意図的に通知を送信しません
 
 ### 広告が送信されない
-
-```bash
-# broadcasts.json の内容確認
-cat /home/ec2-user/tobetsu-garbage-bot/broadcasts.json
-
-# スケジューラログを確認
-sudo journalctl -u tobetsu-bot --since today | grep broadcast
-```
 
 - `enabled: false` になっていないか確認
 - 隔週スケジュールの `start_date` が正しく設定されているか確認
@@ -706,37 +555,15 @@ sudo journalctl -u tobetsu-bot --since today | grep broadcast
 - `.env` に `ADMIN_PASSWORD` と `ADMIN_SECRET_KEY` が設定されているか確認
 - ブラウザの localStorage をクリアして再試行（DevTools → Application → Local Storage）
 
-```bash
-grep ADMIN /home/ec2-user/tobetsu-garbage-bot/.env
-sudo systemctl restart tobetsu-bot
-```
-
 ### 管理画面が 401 エラーを返す
 
-```bash
-# ADMIN_SECRET_KEY を変更して再起動すると全セッション強制ログアウト
-sudo systemctl restart tobetsu-bot
-# ブラウザで再ログイン
-```
+`ADMIN_SECRET_KEY` を変更すると全セッションが強制ログアウトされます。ブラウザで再ログインしてください。
 
 ### スケジュールがおかしい
 
 ```bash
 curl -H "Authorization: Bearer <token>" \
   "http://localhost:8000/api/schedule?district=1&year=2026&month=6"
-
-cat /home/ec2-user/tobetsu-garbage-bot/rules.json
-cat /home/ec2-user/tobetsu-garbage-bot/corrections.json
-sudo systemctl restart tobetsu-bot
-```
-
-### EC2再起動後
-
-Elastic IP 固定済みのためIPは変わらない。systemd で自動起動設定済み。
-
-```bash
-sudo systemctl status tobetsu-bot
-sudo systemctl status nginx
 ```
 
 ### Python 3.9 互換性エラー（`int | None` など）
